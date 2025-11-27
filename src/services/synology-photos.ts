@@ -184,12 +184,39 @@ export class SynologyPhotosService {
 
     logger.info(`Starting full scan of Synology Photos for ${this.config.name}...`);
 
-    let offset = 0;
     let totalCount = 0;
+
+    // Scan Personal Space (user's private photos)
+    logger.info(`Scanning Personal Space...`);
+    const personalCount = await this.scanSpace('personal', (count) => {
+      totalCount = count;
+      if (onProgress) onProgress(totalCount);
+    });
+    logger.info(`Personal Space: ${personalCount} photos found`);
+
+    // Scan Shared Space (photos in /photo shared folder)
+    logger.info(`Scanning Shared Space...`);
+    const sharedCount = await this.scanSpace('shared', (count) => {
+      totalCount = personalCount + count;
+      if (onProgress) onProgress(totalCount);
+    });
+    logger.info(`Shared Space: ${sharedCount} photos found`);
+
+    totalCount = personalCount + sharedCount;
+    logger.info(`Synology scan complete for ${this.config.name}: ${totalCount} photos total (${personalCount} personal, ${sharedCount} shared)`);
+    return totalCount;
+  }
+
+  private async scanSpace(
+    space: 'personal' | 'shared',
+    onProgress?: (count: number) => void
+  ): Promise<number> {
+    let offset = 0;
+    let count = 0;
     const limit = 100;
 
     do {
-      const response = await this.fetchPhotos(offset, limit);
+      const response = await this.fetchPhotos(offset, limit, space);
 
       if (!response.success || !response.data?.list) {
         break;
@@ -199,12 +226,12 @@ export class SynologyPhotosService {
       if (photos.length === 0) break;
 
       for (const photo of photos) {
-        await this.processPhoto(photo);
-        totalCount++;
+        await this.processPhoto(photo, space);
+        count++;
       }
 
       if (onProgress) {
-        onProgress(totalCount);
+        onProgress(count);
       }
 
       offset += limit;
@@ -213,18 +240,23 @@ export class SynologyPhotosService {
       await this.delay(50);
     } while (true);
 
-    logger.info(`Synology scan complete for ${this.config.name}: ${totalCount} photos found`);
-    return totalCount;
+    return count;
   }
 
-  private async fetchPhotos(offset: number, limit: number): Promise<SynologyApiResponse<{ list: SynologyPhoto[] }>> {
-    // Try Synology Photos API (DSM 7+)
+  private async fetchPhotos(
+    offset: number,
+    limit: number,
+    space: 'personal' | 'shared' = 'personal'
+  ): Promise<SynologyApiResponse<{ list: SynologyPhoto[] }>> {
+    // Use different API for personal vs shared space
+    const api = space === 'shared' ? 'SYNO.FotoTeam.Browse.Item' : 'SYNO.Foto.Browse.Item';
+
     try {
       const response = await this.client.get<SynologyApiResponse<{ list: SynologyPhoto[] }>>(
         '/webapi/entry.cgi',
         {
           params: {
-            api: 'SYNO.Foto.Browse.Item',
+            api,
             version: 1,
             method: 'list',
             offset,
@@ -239,39 +271,44 @@ export class SynologyPhotosService {
         return response.data;
       }
     } catch (error) {
-      logger.debug(`Synology Photos API failed, trying Photo Station API: ${error}`);
+      logger.debug(`${api} failed: ${error}`);
     }
 
-    // Fallback to Photo Station API (DSM 6)
-    try {
-      const response = await this.client.get<SynologyApiResponse>(
-        '/webapi/PhotoStation/photo.cgi',
-        {
-          params: {
-            api: 'SYNO.PhotoStation.Photo',
-            version: 1,
-            method: 'list',
-            offset,
-            limit,
-            type: 'photo,video',
-            additional: 'photo_exif,video_codec,video_quality,thumb_size',
-            _sid: this.sid,
-          },
-        }
-      );
+    // Fallback to Photo Station API (DSM 6) - only for personal space
+    if (space === 'personal') {
+      try {
+        const response = await this.client.get<SynologyApiResponse>(
+          '/webapi/PhotoStation/photo.cgi',
+          {
+            params: {
+              api: 'SYNO.PhotoStation.Photo',
+              version: 1,
+              method: 'list',
+              offset,
+              limit,
+              type: 'photo,video',
+              additional: 'photo_exif,video_codec,video_quality,thumb_size',
+              _sid: this.sid,
+            },
+          }
+        );
 
-      return response.data;
-    } catch (error) {
-      logger.error(`Failed to fetch photos: ${error}`);
-      return { success: false };
+        return response.data;
+      } catch (error) {
+        logger.error(`Failed to fetch photos: ${error}`);
+      }
     }
+
+    return { success: false };
   }
 
-  private async processPhoto(photo: SynologyPhoto): Promise<void> {
+  private async processPhoto(photo: SynologyPhoto, space: 'personal' | 'shared' = 'personal'): Promise<void> {
     const hash = this.generateContentHash(photo);
 
+    // Use different ID prefix for personal vs shared to avoid collisions
+    const spacePrefix = space === 'shared' ? 'shared' : 'personal';
     const photoRecord: PhotoRecord = {
-      id: `synology-${this.config.name}-${photo.id}`,
+      id: `synology-${this.config.name}-${spacePrefix}-${photo.id}`,
       source: 'synology',
       accountName: this.config.name,
       filename: photo.filename,
