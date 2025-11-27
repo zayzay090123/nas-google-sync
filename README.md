@@ -6,11 +6,11 @@ Google killed their Photos API in March 2025. This tool works around that by imp
 
 ## What It Does
 
-- **Imports** your Google Takeout photo export
-- **Detects duplicates** so you don't upload photos twice
-- **Uploads** new photos to your Synology NAS
-- **Tells you** which photos are safely backed up (so you can delete them from Google)
-- **Preserves dates** by reading the JSON metadata files that Google Takeout includes
+1. **Scans** your Synology NAS to see what photos you already have
+2. **Imports** your Google Takeout export and detects duplicates
+3. **Uploads** only NEW photos to your Synology (skips duplicates)
+4. **Tells you** which photos are safe to delete from Google (with date ranges)
+5. **Preserves dates** by reading the JSON metadata files from Google Takeout
 
 ---
 
@@ -198,9 +198,21 @@ Google doesn't let apps delete photos. After confirming your backup, use [Google
 
 | Problem | Solution |
 |---------|----------|
-| Authentication failed | Add your Synology user to the Administrators group |
-| 0 new photos found | Photos already exist on Synology (detected by file hash) |
-| Multiple ZIP files | Extract all ZIPs to the same folder before importing |
+| Authentication failed | Add your Synology user to the Administrators group in DSM |
+| 0 new photos found | All photos already exist on Synology - that's good! |
+| Multiple ZIP files | Extract all ZIPs into the same folder before importing |
+| "Already on Synology" count is 0 | Make sure you ran `scan` before `import` |
+| Wrong dates on photos | Check if the `.supplemental-metadata.json` files exist in your Takeout |
+
+---
+
+## How Duplicate Detection Works
+
+The tool matches photos between Google Takeout and Synology using:
+1. **Filename + Date** - Same filename taken on the same day
+2. **File hash** - Identical file content (when available)
+
+Photos that match are marked as "Already on Synology" and won't be uploaded again. They're also included in the export so you know they're safe to delete from Google.
 
 ---
 

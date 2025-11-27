@@ -141,6 +141,7 @@ export class SyncService {
 
     // Check each photo for duplicates
     const newPhotos: TakeoutPhoto[] = [];
+    const alreadyBackedUp: TakeoutPhoto[] = [];
 
     for (const photo of scanResult.photos) {
       // Create a filename+date key for matching (normalize date to just the date part)
@@ -153,6 +154,7 @@ export class SyncService {
 
       if (hashMatch || filenameDateMatch) {
         result.duplicatesInSynology++;
+        alreadyBackedUp.push(photo);
         logger.debug(`Duplicate found: ${photo.filename} (${hashMatch ? 'hash' : 'filename+date'} match)`);
       } else if (seenTakeoutHashes.has(photo.hash) || seenTakeoutFilenameDate.has(filenameDateKey)) {
         result.duplicatesInTakeout++;
@@ -165,8 +167,11 @@ export class SyncService {
 
     result.newPhotos = newPhotos.length;
 
-    // Import new photos to database
+    // Import new photos to database (need to be synced)
     await takeoutService.importToDatabase(newPhotos);
+
+    // Also import already-backed-up photos so they show in export (marked as backed up)
+    await takeoutService.importAsBackedUp(alreadyBackedUp);
 
     logger.info(
       `Takeout import complete for ${accountName}: ` +

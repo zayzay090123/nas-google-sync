@@ -270,6 +270,41 @@ export class GoogleTakeoutService {
     logger.info(`Imported ${imported} photos to database`);
     return imported;
   }
+
+  /**
+   * Import photos that are already backed up to Synology
+   * These are tracked so the export command knows they're safe to delete from Google
+   */
+  async importAsBackedUp(photos: TakeoutPhoto[]): Promise<number> {
+    if (photos.length === 0) return 0;
+
+    logger.info(`Recording ${photos.length} photos already backed up to Synology...`);
+
+    let imported = 0;
+    for (const photo of photos) {
+      const record: PhotoRecord = {
+        id: `takeout-${this.accountName}-${photo.hash}`,
+        source: 'google',
+        accountName: this.accountName,
+        filename: photo.filename,
+        mimeType: photo.mimeType,
+        creationTime: photo.creationTime,
+        fileSize: photo.fileSize,
+        hash: photo.hash,
+        googleMediaItemId: undefined,
+        synologyPath: photo.filePath,
+        isBackedUp: true,  // Already on Synology
+        canBeRemoved: true, // Safe to delete from Google
+        lastScannedAt: new Date().toISOString(),
+      };
+
+      insertPhoto(record);
+      imported++;
+    }
+
+    logger.info(`Recorded ${imported} already-backed-up photos`);
+    return imported;
+  }
 }
 
 /**
