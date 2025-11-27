@@ -12,11 +12,9 @@ Google killed their Photos API in March 2025. This tool works around that by imp
 - **Tells you** which photos are safely backed up (so you can delete them from Google)
 - **Preserves dates** by reading the JSON metadata files that Google Takeout includes
 
-Works with multiple accounts (you + spouse, each syncing to their own Synology user).
-
 ---
 
-## Quick Start
+## Quick Start (Single User)
 
 ### 1. Install Node.js
 
@@ -88,8 +86,69 @@ npm run start -- import "C:\path\to\Takeout\Google Photos" --account mygoogle
 npm run start -- sync --account mygoogle
 
 # See what's safe to delete from Google
-npm run start -- export --format dates
+npm run start -- export --format dates --account mygoogle
 ```
+
+---
+
+## Multiple Users (You + Spouse)
+
+Each person needs their own Google Takeout export and their own Synology account.
+
+### Configure for Two Users
+
+```env
+SYNOLOGY_HOST=192.168.1.100
+SYNOLOGY_PORT=5000
+SYNOLOGY_ACCOUNTS=user1,user2
+
+# User 1 (you)
+SYNOLOGY_user1_USERNAME=your_username
+SYNOLOGY_user1_PASSWORD=your_password
+SYNOLOGY_user1_PHOTO_PATH=/homes/your_username/Photos
+
+# User 2 (spouse)
+SYNOLOGY_user2_USERNAME=spouse_username
+SYNOLOGY_user2_PASSWORD=spouse_password
+SYNOLOGY_user2_PHOTO_PATH=/homes/spouse_username/Photos
+
+GOOGLE_ACCOUNTS=me,spouse
+PAIRING_1_GOOGLE=me
+PAIRING_1_SYNOLOGY=user1
+PAIRING_2_GOOGLE=spouse
+PAIRING_2_SYNOLOGY=user2
+```
+
+### Run for Each Person
+
+**Step 1:** Each person exports from [takeout.google.com](https://takeout.google.com) and extracts to separate folders.
+
+**Step 2:** Import and sync each account separately:
+
+```bash
+# Scan Synology first (only needed once)
+npm run start -- scan
+
+# YOUR photos
+npm run start -- import "C:\Takeout\me" --account me
+npm run start -- sync --account me
+
+# SPOUSE's photos
+npm run start -- import "C:\Takeout\spouse" --account spouse
+npm run start -- sync --account spouse
+```
+
+**Step 3:** See what each person can delete from Google:
+
+```bash
+# Your backed-up photos
+npm run start -- export --format dates --account me
+
+# Spouse's backed-up photos
+npm run start -- export --format dates --account spouse
+```
+
+Each person then deletes from their **own** Google Photos account based on their date ranges.
 
 ---
 
@@ -100,7 +159,7 @@ npm run start -- export --format dates
 | `npm run start -- scan` | Index photos already on your Synology |
 | `npm run start -- import <path> --account <name>` | Import a Google Takeout folder |
 | `npm run start -- sync --account <name>` | Upload new photos to Synology |
-| `npm run start -- export --format dates` | Show which photos are backed up |
+| `npm run start -- export --format dates --account <name>` | Show backed-up photos for that account |
 | `npm run start -- workflow` | Show detailed step-by-step guide |
 
 ---
