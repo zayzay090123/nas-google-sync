@@ -174,6 +174,26 @@ Each person then deletes from their **own** Google Photos account based on their
 | `node dist/index.js inspect` | Verify duplicate detection is working |
 | `node dist/index.js workflow` | Show detailed step-by-step guide |
 
+### Sync Options
+
+By default, `sync` uploads **all** pending photos in one go. For large libraries, you may want to upload in batches:
+
+```bash
+# Upload ALL photos at once (default)
+node dist/index.js sync --account mygoogle
+
+# Upload in batches of 100
+node dist/index.js sync --account mygoogle -n 100
+
+# Test with just 5 photos first
+node dist/index.js sync --account mygoogle -n 5
+
+# Preview what would be uploaded (no actual upload)
+node dist/index.js sync --account mygoogle --dry-run
+```
+
+> **Tip:** If you have thousands of photos, consider starting with `-n 50` to make sure everything works, then run without `-n` to upload the rest.
+
 ### Inspect Command Options
 
 Use `inspect` to debug and verify that duplicate matching is working:

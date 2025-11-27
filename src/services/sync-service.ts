@@ -224,7 +224,7 @@ export class SyncService {
    */
   async syncToSynology(
     accountName: string,
-    count: number = 100,
+    limit?: number,
     dryRun: boolean = config.dryRun,
     onProgress?: (current: number, total: number, filename: string) => void
   ): Promise<{ synced: number; failed: number; skipped: number }> {
@@ -243,7 +243,8 @@ export class SyncService {
     }
 
     // Get photos that need to be synced (from takeout, not yet backed up)
-    const photosToSync = getPhotosNotBackedUp(accountName).slice(0, count);
+    const allPhotosToSync = getPhotosNotBackedUp(accountName);
+    const photosToSync = limit ? allPhotosToSync.slice(0, limit) : allPhotosToSync;
 
     logger.info(
       `${dryRun ? '[DRY RUN] ' : ''}Syncing ${photosToSync.length} photos from ${accountName} ` +

@@ -193,7 +193,7 @@ program
   .command('sync')
   .description('Sync imported takeout photos to Synology NAS')
   .option('-a, --account <name>', 'Google account name to sync from')
-  .option('-n, --count <number>', 'Number of photos to sync', '100')
+  .option('-n, --limit <number>', 'Limit number of photos to sync (default: all)')
   .option('--dry-run', 'Show what would be synced without actually syncing')
   .action(async (options) => {
     const service = new SyncService();
@@ -211,7 +211,7 @@ program
 
         const result = await service.syncToSynology(
           accountName,
-          parseInt(options.count, 10),
+          options.limit ? parseInt(options.limit, 10) : undefined,
           options.dryRun,
           (current, total, filename) => {
             process.stdout.write(`\r[${current}/${total}] ${filename}...`);
