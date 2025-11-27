@@ -305,12 +305,22 @@ export class SynologyPhotosService {
   private async processPhoto(photo: SynologyPhoto, space: 'personal' | 'shared' = 'personal'): Promise<void> {
     const hash = this.generateContentHash(photo);
 
-    // Use different ID prefix for personal vs shared to avoid collisions
-    const spacePrefix = space === 'shared' ? 'shared' : 'personal';
+    // For shared space, use a global ID so multiple users scanning don't create duplicates
+    // For personal space, include account name since each user has their own personal photos
+    const id = space === 'shared'
+      ? `synology-shared-${photo.id}`
+      : `synology-${this.config.name}-personal-${photo.id}`;
+
+    // For shared photos, use a generic account name and path
+    const accountName = space === 'shared' ? '_shared' : this.config.name;
+    const photoPath = space === 'shared'
+      ? `/photo/${photo.filename}`
+      : `${this.config.photoLibraryPath}/${photo.filename}`;
+
     const photoRecord: PhotoRecord = {
-      id: `synology-${this.config.name}-${spacePrefix}-${photo.id}`,
+      id,
       source: 'synology',
-      accountName: this.config.name,
+      accountName,
       filename: photo.filename,
       mimeType: this.getMimeType(photo.filename, photo.type),
       creationTime: new Date(photo.time * 1000).toISOString(),
@@ -318,7 +328,7 @@ export class SynologyPhotosService {
       height: photo.additional?.resolution?.height,
       fileSize: photo.filesize,
       hash,
-      synologyPath: `${this.config.photoLibraryPath}/${photo.filename}`,
+      synologyPath: photoPath,
       isBackedUp: true, // Already on NAS
       canBeRemoved: false,
       lastScannedAt: new Date().toISOString(),
