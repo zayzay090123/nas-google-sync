@@ -63,18 +63,17 @@ npm run build
 2. Open `.env` in a text editor and fill in your Synology details:
 
 ```env
-SYNOLOGY_HOST=192.168.1.100       # Your NAS IP address
+SYNOLOGY_HOST=192.168.1.100
 SYNOLOGY_PORT=5000
-SYNOLOGY_ACCOUNTS=myaccount
 
-SYNOLOGY_myaccount_USERNAME=your_synology_username
-SYNOLOGY_myaccount_PASSWORD=your_synology_password
-SYNOLOGY_myaccount_PHOTO_PATH=/homes/your_synology_username/Photos
+SYNOLOGY_USERNAME=your_synology_username
+SYNOLOGY_PASSWORD=your_synology_password
+SYNOLOGY_PHOTO_PATH=/homes/your_synology_username/Photos
 
-GOOGLE_ACCOUNTS=mygoogle
-PAIRING_1_GOOGLE=mygoogle
-PAIRING_1_SYNOLOGY=myaccount
+GOOGLE_ACCOUNT=mygoogle
 ```
+
+That's it! Just 6 values to fill in.
 
 > **Note:** Your Synology user must be in the **Administrators group** (DSM 7 requirement).
 
@@ -117,23 +116,18 @@ Each person needs their own Google Takeout export and their own Synology account
 ```env
 SYNOLOGY_HOST=192.168.1.100
 SYNOLOGY_PORT=5000
-SYNOLOGY_ACCOUNTS=user1,user2
 
 # User 1 (you)
-SYNOLOGY_user1_USERNAME=your_username
-SYNOLOGY_user1_PASSWORD=your_password
-SYNOLOGY_user1_PHOTO_PATH=/homes/your_username/Photos
+SYNOLOGY_USERNAME=your_username
+SYNOLOGY_PASSWORD=your_password
+SYNOLOGY_PHOTO_PATH=/homes/your_username/Photos
+GOOGLE_ACCOUNT=me
 
 # User 2 (spouse)
-SYNOLOGY_user2_USERNAME=spouse_username
-SYNOLOGY_user2_PASSWORD=spouse_password
-SYNOLOGY_user2_PHOTO_PATH=/homes/spouse_username/Photos
-
-GOOGLE_ACCOUNTS=me,spouse
-PAIRING_1_GOOGLE=me
-PAIRING_1_SYNOLOGY=user1
-PAIRING_2_GOOGLE=spouse
-PAIRING_2_SYNOLOGY=user2
+SYNOLOGY_2_USERNAME=spouse_username
+SYNOLOGY_2_PASSWORD=spouse_password
+SYNOLOGY_2_PHOTO_PATH=/homes/spouse_username/Photos
+GOOGLE_ACCOUNT_2=spouse
 ```
 
 ### Run for Each Person

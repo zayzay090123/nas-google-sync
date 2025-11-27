@@ -325,28 +325,36 @@ export class SynologyPhotosService {
       throw new Error('Not authenticated. Call authenticate() first.');
     }
 
-    const folder = destinationFolder || this.config.photoLibraryPath;
+    const destPath = destinationFolder || this.config.photoLibraryPath;
 
     try {
-      // Create a FormData-like object for upload
       const FormData = (await import('form-data')).default;
       const form = new FormData();
 
-      form.append('api', 'SYNO.Foto.Upload.Item');
-      form.append('version', '1');
-      form.append('method', 'upload');
-      form.append('_sid', this.sid);
-      form.append('filename', filename);
-      form.append('folder_id', '0'); // Root folder or specify target
-      form.append('file', buffer, { filename });
+      // For multipart uploads, only include the required form fields
+      form.append('path', destPath);
+      form.append('create_parents', 'true');
+      form.append('overwrite', 'false');
+      form.append('file', buffer, {
+        filename,
+        contentType: this.getMimeType(filename, 'photo'),
+      });
 
+      // SID and API params go in the URL query string for multipart uploads
       const response = await this.client.post<SynologyApiResponse>(
         '/webapi/entry.cgi',
         form,
         {
+          params: {
+            api: 'SYNO.FileStation.Upload',
+            version: 2,
+            method: 'upload',
+            _sid: this.sid,
+          },
           headers: form.getHeaders(),
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
+          timeout: 120000,
         }
       );
 

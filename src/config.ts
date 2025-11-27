@@ -8,8 +8,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export interface GoogleAccountConfig {
   name: string;
-  // Note: credentialsPath and tokenPath are no longer needed
-  // since we use Google Takeout instead of the API
 }
 
 export interface SynologyAccountConfig {
@@ -38,33 +36,117 @@ export interface Config {
 }
 
 export function loadConfig(): Config {
-  // Parse Synology accounts from SYNOLOGY_ACCOUNTS env var
-  // Format: SYNOLOGY_ACCOUNTS=pete,becca,shared_space
-  // Then each account needs: SYNOLOGY_{name}_USERNAME, SYNOLOGY_{name}_PASSWORD, SYNOLOGY_{name}_PHOTO_PATH
   const synologyAccounts: SynologyAccountConfig[] = [];
-
-  const synologyAccountNames = (process.env.SYNOLOGY_ACCOUNTS || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
+  const googleAccounts: GoogleAccountConfig[] = [];
+  const accountPairings: AccountPairing[] = [];
 
   const globalHost = process.env.SYNOLOGY_HOST || 'localhost';
   const globalPort = parseInt(process.env.SYNOLOGY_PORT || '5000', 10);
   const globalUseSsl = process.env.SYNOLOGY_SECURE === 'true';
 
-  for (const accountName of synologyAccountNames) {
+  // ===========================================
+  // SIMPLE FORMAT (recommended for most users)
+  // ===========================================
+  // SYNOLOGY_USERNAME, SYNOLOGY_PASSWORD, SYNOLOGY_PHOTO_PATH, GOOGLE_ACCOUNT
+  // SYNOLOGY_2_USERNAME, SYNOLOGY_2_PASSWORD, SYNOLOGY_2_PHOTO_PATH, GOOGLE_ACCOUNT_2
+
+  // First user (no number suffix)
+  if (process.env.SYNOLOGY_USERNAME) {
+    const accountName = process.env.GOOGLE_ACCOUNT || 'account1';
+
     synologyAccounts.push({
       name: accountName,
-      host: process.env[`SYNOLOGY_${accountName}_HOST`] || globalHost,
-      port: parseInt(process.env[`SYNOLOGY_${accountName}_PORT`] || String(globalPort), 10),
-      username: process.env[`SYNOLOGY_${accountName}_USERNAME`] || '',
-      password: process.env[`SYNOLOGY_${accountName}_PASSWORD`] || '',
-      photoLibraryPath: process.env[`SYNOLOGY_${accountName}_PHOTO_PATH`] || '/photo',
-      useSsl: process.env[`SYNOLOGY_${accountName}_SECURE`] === 'true' || globalUseSsl,
+      host: globalHost,
+      port: globalPort,
+      username: process.env.SYNOLOGY_USERNAME,
+      password: process.env.SYNOLOGY_PASSWORD || '',
+      photoLibraryPath: process.env.SYNOLOGY_PHOTO_PATH || '/photo',
+      useSsl: globalUseSsl,
+    });
+
+    googleAccounts.push({ name: accountName });
+    accountPairings.push({
+      googleAccountName: accountName,
+      synologyAccountName: accountName,
     });
   }
 
-  // Fallback: support legacy numbered account format (SYNOLOGY_ACCOUNT_1_NAME, etc.)
+  // Additional users (numbered: SYNOLOGY_2_*, SYNOLOGY_3_*, etc.)
+  for (let i = 2; i <= 5; i++) {
+    const username = process.env[`SYNOLOGY_${i}_USERNAME`];
+    if (username) {
+      const accountName = process.env[`GOOGLE_ACCOUNT_${i}`] || `account${i}`;
+
+      synologyAccounts.push({
+        name: accountName,
+        host: process.env[`SYNOLOGY_${i}_HOST`] || globalHost,
+        port: parseInt(process.env[`SYNOLOGY_${i}_PORT`] || String(globalPort), 10),
+        username,
+        password: process.env[`SYNOLOGY_${i}_PASSWORD`] || '',
+        photoLibraryPath: process.env[`SYNOLOGY_${i}_PHOTO_PATH`] || '/photo',
+        useSsl: process.env[`SYNOLOGY_${i}_SECURE`] === 'true' || globalUseSsl,
+      });
+
+      googleAccounts.push({ name: accountName });
+      accountPairings.push({
+        googleAccountName: accountName,
+        synologyAccountName: accountName,
+      });
+    }
+  }
+
+  // ===========================================
+  // LEGACY FORMAT (for backwards compatibility)
+  // ===========================================
+  // SYNOLOGY_ACCOUNTS=name1,name2
+  // SYNOLOGY_name1_USERNAME, SYNOLOGY_name1_PASSWORD, etc.
+
+  if (synologyAccounts.length === 0 && process.env.SYNOLOGY_ACCOUNTS) {
+    const synologyAccountNames = process.env.SYNOLOGY_ACCOUNTS
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    for (const accountName of synologyAccountNames) {
+      synologyAccounts.push({
+        name: accountName,
+        host: process.env[`SYNOLOGY_${accountName}_HOST`] || globalHost,
+        port: parseInt(process.env[`SYNOLOGY_${accountName}_PORT`] || String(globalPort), 10),
+        username: process.env[`SYNOLOGY_${accountName}_USERNAME`] || '',
+        password: process.env[`SYNOLOGY_${accountName}_PASSWORD`] || '',
+        photoLibraryPath: process.env[`SYNOLOGY_${accountName}_PHOTO_PATH`] || '/photo',
+        useSsl: process.env[`SYNOLOGY_${accountName}_SECURE`] === 'true' || globalUseSsl,
+      });
+    }
+
+    // Parse Google accounts for legacy format
+    const googleAccountNames = (process.env.GOOGLE_ACCOUNTS || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    for (const name of googleAccountNames) {
+      googleAccounts.push({ name });
+    }
+
+    // Parse explicit pairings for legacy format
+    if (process.env.PAIRING_1_GOOGLE && process.env.PAIRING_1_SYNOLOGY) {
+      accountPairings.push({
+        googleAccountName: process.env.PAIRING_1_GOOGLE,
+        synologyAccountName: process.env.PAIRING_1_SYNOLOGY,
+      });
+    }
+    if (process.env.PAIRING_2_GOOGLE && process.env.PAIRING_2_SYNOLOGY) {
+      accountPairings.push({
+        googleAccountName: process.env.PAIRING_2_GOOGLE,
+        synologyAccountName: process.env.PAIRING_2_SYNOLOGY,
+      });
+    }
+  }
+
+  // ===========================================
+  // NUMBERED LEGACY FORMAT (SYNOLOGY_ACCOUNT_1_NAME, etc.)
+  // ===========================================
   if (synologyAccounts.length === 0) {
     for (let i = 1; i <= 3; i++) {
       const name = process.env[`SYNOLOGY_ACCOUNT_${i}_NAME`];
@@ -77,58 +159,6 @@ export function loadConfig(): Config {
           password: process.env[`SYNOLOGY_ACCOUNT_${i}_PASSWORD`] || '',
           photoLibraryPath: process.env[`SYNOLOGY_ACCOUNT_${i}_PHOTO_PATH`] || '/photo',
           useSsl: process.env[`SYNOLOGY_ACCOUNT_${i}_USE_SSL`] === 'true' || globalUseSsl,
-        });
-      }
-    }
-  }
-
-  // Final fallback: single legacy account
-  if (synologyAccounts.length === 0 && process.env.SYNOLOGY_HOST) {
-    synologyAccounts.push({
-      name: 'NAS',
-      host: process.env.SYNOLOGY_HOST,
-      port: parseInt(process.env.SYNOLOGY_PORT || '5000', 10),
-      username: process.env.SYNOLOGY_USERNAME || '',
-      password: process.env.SYNOLOGY_PASSWORD || '',
-      photoLibraryPath: process.env.SYNOLOGY_PHOTO_LIBRARY_PATH || '/photo',
-      useSsl: process.env.SYNOLOGY_USE_SSL === 'true',
-    });
-  }
-
-  // Parse Google account names from GOOGLE_ACCOUNTS env var
-  // These are just labels for organizing imports - no API credentials needed
-  const googleAccountNames = (process.env.GOOGLE_ACCOUNTS || 'account_1,account_2')
-    .split(',')
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
-
-  const googleAccounts: GoogleAccountConfig[] = googleAccountNames.map(name => ({ name }));
-
-  // Build account pairings (Google account -> Synology account)
-  const accountPairings: AccountPairing[] = [];
-
-  if (process.env.PAIRING_1_GOOGLE && process.env.PAIRING_1_SYNOLOGY) {
-    accountPairings.push({
-      googleAccountName: process.env.PAIRING_1_GOOGLE,
-      synologyAccountName: process.env.PAIRING_1_SYNOLOGY,
-    });
-  }
-
-  if (process.env.PAIRING_2_GOOGLE && process.env.PAIRING_2_SYNOLOGY) {
-    accountPairings.push({
-      googleAccountName: process.env.PAIRING_2_GOOGLE,
-      synologyAccountName: process.env.PAIRING_2_SYNOLOGY,
-    });
-  }
-
-  // Auto-pair if names match and no explicit pairings
-  if (accountPairings.length === 0) {
-    for (const google of googleAccounts) {
-      const matchingSynology = synologyAccounts.find(s => s.name === google.name);
-      if (matchingSynology) {
-        accountPairings.push({
-          googleAccountName: google.name,
-          synologyAccountName: matchingSynology.name,
         });
       }
     }

@@ -6,8 +6,8 @@ dist/
 
 # Environment files (contain passwords)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Data directory (contains database and OAuth tokens)
 data/
