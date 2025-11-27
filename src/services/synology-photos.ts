@@ -140,10 +140,13 @@ export class SynologyPhotosService {
 
       if (response.data.success && response.data.data?.vol_info) {
         const volumes = response.data.data.vol_info;
-        // Find the volume containing photos
+        // Find volume_1 (main storage) - the vol_info uses name like "volume_1" or "volume_2"
+        // Prefer volume_1 as that's typically where user data lives, not surveillance
         const photoVolume = volumes.find((v: any) =>
-          this.config.photoLibraryPath.startsWith(`/${v.name}`) ||
-          v.name === 'volume1'
+          v.name === 'volume_1' || v.volume === 'volume_1'
+        ) || volumes.find((v: any) =>
+          // Fallback: find the largest volume (likely main storage, not surveillance)
+          !v.vol_desc?.toLowerCase().includes('surveillance')
         ) || volumes[0];
 
         if (photoVolume) {
