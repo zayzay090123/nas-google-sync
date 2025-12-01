@@ -23,9 +23,11 @@ If you want your photos to have correct dates when viewed in Synology Photos (or
 
 1. **Scans** your Synology NAS to see what photos you already have
 2. **Imports** your Google Takeout export and detects duplicates
-3. **Uploads** only NEW photos to your Synology (skips duplicates)
-4. **Tells you** which photos are safe to delete from Google (with date ranges)
-5. **Preserves dates** by reading the JSON metadata files from Google Takeout
+3. **Detects albums** from the Google Takeout folder structure
+4. **Uploads** only NEW photos to your Synology (skips duplicates)
+5. **Preserves album structure** via folder organization or EXIF tags (optional)
+6. **Tells you** which photos are safe to delete from Google (with date ranges)
+7. **Preserves dates** by reading the JSON metadata files from Google Takeout
 
 ---
 
@@ -170,6 +172,7 @@ Each person then deletes from their **own** Google Photos account based on their
 | `node dist/index.js scan` | Index photos already on your Synology |
 | `node dist/index.js import <path> --account <name>` | Import a Google Takeout folder |
 | `node dist/index.js sync --account <name>` | Upload new photos to Synology |
+| `node dist/index.js albums` | List albums detected from Google Takeout |
 | `node dist/index.js export --format dates --account <name>` | Show backed-up photos for that account |
 | `node dist/index.js inspect` | Verify duplicate detection is working |
 | `node dist/index.js workflow` | Show detailed step-by-step guide |
@@ -193,6 +196,64 @@ node dist/index.js sync --account mygoogle --dry-run
 ```
 
 > **Tip:** If you have thousands of photos, consider starting with `-n 50` to make sure everything works, then run without `-n` to upload the rest.
+
+### Album Preservation Options
+
+Google Takeout organizes photos into folders matching your album names (e.g., `Trip to Florida/`, `Family Reunion 2023/`). By default, the tool uploads all photos to a flat folder. Use these options to preserve your album structure:
+
+```bash
+# Create album folders on Synology
+# Photos go into /Photos/AlbumName/ subfolders
+node dist/index.js sync --account mygoogle --organize-by-album
+
+# Embed album name in photo EXIF tags
+# Writes to XMP:Subject and IPTC:Keywords fields
+node dist/index.js sync --account mygoogle --tag-with-album
+
+# Both options together
+node dist/index.js sync --account mygoogle --organize-by-album --tag-with-album
+```
+
+| Option | What it does |
+|--------|--------------|
+| `--organize-by-album` | Creates folders on Synology matching album names. Photos upload to `/Photos/Trip to Florida/` instead of `/Photos/` |
+| `--tag-with-album` | Embeds album name in photo metadata (XMP:Subject, Keywords). Synology Photos can create albums from these tags later |
+
+**Which should I use?**
+
+- **`--organize-by-album`** - Best for folder-based organization. Photos appear in album folders in Synology File Station.
+- **`--tag-with-album`** - Best for tag-based albums. Use Synology Photos' "Filter by tag" feature to create albums, or create smart albums based on keywords.
+- **Both** - Maximum flexibility. Photos are organized in folders AND have embedded tags.
+
+> **Note:** The `--tag-with-album` option requires `exiftool` (bundled automatically). It only works on supported image formats (JPEG, PNG, TIFF, HEIC). Videos are skipped for tagging.
+
+### Albums Command
+
+After importing, see what albums were detected:
+
+```bash
+# List all detected albums with photo counts
+node dist/index.js albums
+
+# Filter by account
+node dist/index.js albums --account mygoogle
+
+# Show more albums (default: 50)
+node dist/index.js albums -n 100
+```
+
+Example output:
+```
+========== DETECTED ALBUMS ==========
+
+  Total albums: 47
+  Photos in albums: 3,842
+
+  Trip to Florida: 234 photos
+  Family Reunion 2023: 156 photos
+  Birthday Party: 89 photos
+  ...
+```
 
 ### Inspect Command Options
 
@@ -261,6 +322,33 @@ The tool matches photos between Google Takeout and Synology using:
 2. **File hash** - Identical file content (when available)
 
 Photos that match are marked as "Already on Synology" and won't be uploaded again. They're also included in the export so you know they're safe to delete from Google.
+
+---
+
+## How Album Detection Works
+
+When you import a Google Takeout, the tool detects albums from the folder structure:
+
+```
+Google Photos/
+├── Trip to Florida/          ← Album: "Trip to Florida"
+│   ├── IMG_001.jpg
+│   └── IMG_002.jpg
+├── Family Reunion 2023/      ← Album: "Family Reunion 2023"
+│   └── DSC_100.jpg
+├── Photos from 2023/         ← Skipped (auto-generated date folder)
+│   └── photo.jpg
+└── IMG_999.jpg               ← No album (root level)
+```
+
+**Albums are detected** from the first-level subfolder names under `Google Photos/`.
+
+**Auto-generated folders are skipped**, including:
+- `Photos from YYYY` (Google's date-based folders)
+- Date-pattern folders like `2024-01-15`
+- `Untitled`, `Archive`, `Trash`
+
+After import, run `node dist/index.js albums` to see all detected albums and their photo counts.
 
 ---
 
