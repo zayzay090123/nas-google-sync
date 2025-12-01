@@ -4,6 +4,7 @@ import { loadConfig, getPairedSynologyAccount } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { SynologyPhotosService } from './synology-photos.js';
 import { GoogleTakeoutService, TakeoutPhoto, TakeoutScanResult } from './google-takeout.js';
+import { TagWriterService } from './tag-writer.js';
 import {
   getPhotoStats,
   findDuplicates,
@@ -13,6 +14,7 @@ import {
   PhotoRecord,
   getPhotosBySource,
   getDatabase,
+  getAlbumStats,
 } from '../models/database.js';
 
 const config = loadConfig();
@@ -49,6 +51,14 @@ export interface ImportResult {
   duplicatesInSynology: number;
   duplicatesInTakeout: number;
   errors: string[];
+  albumsFound: Map<string, number>;  // Album name -> photo count
+}
+
+export interface SyncOptions {
+  limit?: number;
+  dryRun?: boolean;
+  organizeByAlbum?: boolean;  // Create album folders on Synology
+  tagWithAlbum?: boolean;     // Write album name to photo EXIF tags
 }
 
 export class SyncService {
@@ -122,6 +132,7 @@ export class SyncService {
       duplicatesInSynology: 0,
       duplicatesInTakeout: 0,
       errors: [],
+      albumsFound: new Map(),
     };
 
     // Scan the takeout folder
@@ -130,6 +141,7 @@ export class SyncService {
 
     result.totalScanned = scanResult.photos.length;
     result.errors = scanResult.errors;
+    result.albumsFound = scanResult.albumsFound;
 
     // Get existing Synology photos for comparison (by hash and by filename+date)
     const synologyByHash = this.getAllSynologyPhotoHashes();
@@ -224,10 +236,11 @@ export class SyncService {
    */
   async syncToSynology(
     accountName: string,
-    limit?: number,
-    dryRun: boolean = config.dryRun,
+    options: SyncOptions = {},
     onProgress?: (current: number, total: number, filename: string) => void
-  ): Promise<{ synced: number; failed: number; skipped: number }> {
+  ): Promise<{ synced: number; failed: number; skipped: number; tagged: number }> {
+    const { limit, dryRun = config.dryRun, organizeByAlbum = false, tagWithAlbum = false } = options;
+
     // Find the paired Synology account
     const pairedSynology = getPairedSynologyAccount(config, accountName);
     if (!pairedSynology) {
@@ -246,69 +259,111 @@ export class SyncService {
     const allPhotosToSync = getPhotosNotBackedUp(accountName);
     const photosToSync = limit ? allPhotosToSync.slice(0, limit) : allPhotosToSync;
 
+    const modeInfo = [];
+    if (organizeByAlbum) modeInfo.push('organize by album');
+    if (tagWithAlbum) modeInfo.push('tag with album');
+    const modeStr = modeInfo.length > 0 ? ` (${modeInfo.join(', ')})` : '';
+
     logger.info(
       `${dryRun ? '[DRY RUN] ' : ''}Syncing ${photosToSync.length} photos from ${accountName} ` +
-      `to ${pairedSynology.name}'s Synology Photos...`
+      `to ${pairedSynology.name}'s Synology Photos${modeStr}...`
     );
 
     let synced = 0;
     let failed = 0;
     let skipped = 0;
+    let tagged = 0;
 
-    for (let i = 0; i < photosToSync.length; i++) {
-      const photo = photosToSync[i];
+    // Track created folders to avoid redundant API calls
+    const createdFolders = new Set<string>();
 
-      if (onProgress) {
-        onProgress(i + 1, photosToSync.length, photo.filename);
-      }
+    // Initialize tag writer if needed
+    let tagWriter: TagWriterService | null = null;
+    if (tagWithAlbum) {
+      tagWriter = new TagWriterService(dryRun);
+    }
 
-      // For takeout imports, we need the original file path
-      // The ID format is: takeout-{accountName}-{hash}
-      // We need to find the actual file
+    try {
+      for (let i = 0; i < photosToSync.length; i++) {
+        const photo = photosToSync[i];
 
-      // Check if we have a file path stored (we store it in synologyPath temporarily for takeout)
-      const db = getDatabase();
-      const row = db.prepare(`
-        SELECT synology_path FROM photos WHERE id = ?
-      `).get(photo.id) as { synology_path?: string } | undefined;
-
-      const filePath = row?.synology_path;
-
-      if (!filePath || !fs.existsSync(filePath)) {
-        logger.warn(`File not found for ${photo.filename}, skipping...`);
-        skipped++;
-        continue;
-      }
-
-      try {
-        if (dryRun) {
-          logger.info(`[DRY RUN] Would sync: ${photo.filename} (${photo.creationTime})`);
-          synced++;
-        } else {
-          logger.info(`Uploading: ${photo.filename}`);
-          const buffer = fs.readFileSync(filePath);
-          const success = await synologyService.uploadPhoto(buffer, photo.filename);
-
-          if (success) {
-            markAsBackedUp(photo.id);
-            synced++;
-            logger.info(`Synced: ${photo.filename}`);
-          } else {
-            failed++;
-            logger.error(`Failed to upload: ${photo.filename}`);
-          }
+        if (onProgress) {
+          onProgress(i + 1, photosToSync.length, photo.filename);
         }
 
-        // Rate limiting
-        await this.delay(200);
-      } catch (error) {
-        failed++;
-        logger.error(`Error syncing ${photo.filename}: ${error}`);
+        // Get the file path and album name from database
+        const db = getDatabase();
+        const row = db.prepare(`
+          SELECT synology_path, album_name FROM photos WHERE id = ?
+        `).get(photo.id) as { synology_path?: string; album_name?: string } | undefined;
+
+        const filePath = row?.synology_path;
+        const albumName = row?.album_name;
+
+        if (!filePath || !fs.existsSync(filePath)) {
+          logger.warn(`File not found for ${photo.filename}, skipping...`);
+          skipped++;
+          continue;
+        }
+
+        try {
+          // Write album tag to photo if requested
+          if (tagWithAlbum && tagWriter && albumName) {
+            const tagResult = await tagWriter.writeAlbumTag(filePath, albumName);
+            if (tagResult.success) {
+              tagged++;
+            }
+          }
+
+          // Determine destination folder
+          let destFolder = pairedSynology.photoLibraryPath;
+          if (organizeByAlbum && albumName) {
+            destFolder = `${pairedSynology.photoLibraryPath}/${albumName}`;
+
+            // Create folder if not already created (Synology will auto-create, but we track it)
+            if (!createdFolders.has(albumName)) {
+              if (!dryRun) {
+                logger.debug(`Photos will be organized into album folder: ${albumName}`);
+              }
+              createdFolders.add(albumName);
+            }
+          }
+
+          if (dryRun) {
+            const albumInfo = albumName ? ` [Album: ${albumName}]` : '';
+            logger.info(`[DRY RUN] Would sync: ${photo.filename} to ${destFolder}${albumInfo}`);
+            synced++;
+          } else {
+            logger.info(`Uploading: ${photo.filename}${albumName ? ` [${albumName}]` : ''}`);
+            const buffer = fs.readFileSync(filePath);
+            const success = await synologyService.uploadPhoto(buffer, photo.filename, destFolder);
+
+            if (success) {
+              markAsBackedUp(photo.id);
+              synced++;
+              logger.info(`Synced: ${photo.filename}`);
+            } else {
+              failed++;
+              logger.error(`Failed to upload: ${photo.filename}`);
+            }
+          }
+
+          // Rate limiting
+          await this.delay(200);
+        } catch (error) {
+          failed++;
+          logger.error(`Error syncing ${photo.filename}: ${error}`);
+        }
+      }
+    } finally {
+      // Clean up tag writer
+      if (tagWriter) {
+        await tagWriter.close();
       }
     }
 
-    logger.info(`Sync complete: ${synced} synced, ${failed} failed, ${skipped} skipped`);
-    return { synced, failed, skipped };
+    logger.info(`Sync complete: ${synced} synced, ${failed} failed, ${skipped} skipped, ${tagged} tagged`);
+    return { synced, failed, skipped, tagged };
   }
 
   async checkStorageQuotas(): Promise<Map<string, { used: number; total: number; percentUsed: number }>> {

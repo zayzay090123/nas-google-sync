@@ -23,6 +23,7 @@ export interface PhotoRecord {
   backedUpAt?: string;
   canBeRemoved: boolean;
   lastScannedAt: string;
+  albumName?: string;  // Album/folder name from Google Takeout
 }
 
 export interface StorageStats {
@@ -68,6 +69,7 @@ function initializeSchema(database: Database.Database): void {
       backed_up_at TEXT,
       can_be_removed INTEGER DEFAULT 0,
       last_scanned_at TEXT NOT NULL,
+      album_name TEXT,
       UNIQUE(source, account_name, google_media_item_id),
       UNIQUE(source, synology_path)
     );
@@ -98,7 +100,16 @@ function initializeSchema(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_photos_creation_time ON photos(creation_time);
     CREATE INDEX IF NOT EXISTS idx_photos_source_account ON photos(source, account_name);
     CREATE INDEX IF NOT EXISTS idx_photos_filename ON photos(filename);
+    CREATE INDEX IF NOT EXISTS idx_photos_album_name ON photos(album_name);
   `);
+
+  // Add album_name column if it doesn't exist (for existing databases)
+  try {
+    database.exec(`ALTER TABLE photos ADD COLUMN album_name TEXT`);
+    logger.info('Added album_name column to photos table');
+  } catch (e) {
+    // Column already exists, ignore
+  }
 
   logger.info('Database schema initialized');
 }
@@ -109,9 +120,9 @@ export function insertPhoto(photo: PhotoRecord): void {
     INSERT OR REPLACE INTO photos (
       id, source, account_name, filename, mime_type, creation_time,
       width, height, file_size, hash, google_media_item_id, synology_path,
-      is_backed_up, backed_up_at, can_be_removed, last_scanned_at
+      is_backed_up, backed_up_at, can_be_removed, last_scanned_at, album_name
     ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
     )
   `);
 
@@ -131,7 +142,8 @@ export function insertPhoto(photo: PhotoRecord): void {
     photo.isBackedUp ? 1 : 0,
     photo.backedUpAt,
     photo.canBeRemoved ? 1 : 0,
-    photo.lastScannedAt
+    photo.lastScannedAt,
+    photo.albumName
   );
 }
 
@@ -308,7 +320,55 @@ function mapRowToPhoto(row: any): PhotoRecord {
     backedUpAt: row.backed_up_at,
     canBeRemoved: row.can_be_removed === 1,
     lastScannedAt: row.last_scanned_at,
+    albumName: row.album_name,
   };
+}
+
+/**
+ * Get unique album names from imported photos
+ */
+export function getAlbumStats(accountName?: string): Map<string, number> {
+  const database = getDatabase();
+  let query = `
+    SELECT album_name, COUNT(*) as count FROM photos
+    WHERE source = 'google' AND album_name IS NOT NULL AND album_name != ''
+  `;
+  const params: string[] = [];
+
+  if (accountName) {
+    query += ' AND account_name = ?';
+    params.push(accountName);
+  }
+
+  query += ' GROUP BY album_name ORDER BY count DESC';
+
+  const rows = database.prepare(query).all(...params) as Array<{ album_name: string; count: number }>;
+  const albumStats = new Map<string, number>();
+
+  for (const row of rows) {
+    albumStats.set(row.album_name, row.count);
+  }
+
+  return albumStats;
+}
+
+/**
+ * Get photos by album name
+ */
+export function getPhotosByAlbum(albumName: string, accountName?: string): PhotoRecord[] {
+  const database = getDatabase();
+  let query = `SELECT * FROM photos WHERE source = 'google' AND album_name = ?`;
+  const params: string[] = [albumName];
+
+  if (accountName) {
+    query += ' AND account_name = ?';
+    params.push(accountName);
+  }
+
+  query += ' ORDER BY creation_time ASC';
+
+  const rows = database.prepare(query).all(...params) as any[];
+  return rows.map(mapRowToPhoto);
 }
 
 export function closeDatabase(): void {
