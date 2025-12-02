@@ -382,10 +382,8 @@ export class SyncService {
         }
       }
     } finally {
-      // Clean up tag writer
-      if (tagWriter) {
-        await tagWriter.close();
-      }
+      // Don't close tagWriter here - exiftool is a singleton that may be used by subsequent operations
+      // It will be closed in the CLI command's cleanup
     }
 
     logger.info(`Sync complete: ${synced} synced, ${failed} failed, ${skipped} skipped, ${tagged} tagged`);
@@ -689,7 +687,8 @@ export class SyncService {
         }
       }
     } finally {
-      await tagWriter.close();
+      // Don't close tagWriter here - exiftool is a singleton that may be used by subsequent operations
+      // It will be closed in the CLI command's cleanup
     }
 
     logger.info(

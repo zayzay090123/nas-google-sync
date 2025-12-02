@@ -289,6 +289,14 @@ program
       logger.error(`Sync failed: ${error}`);
       process.exit(1);
     } finally {
+      // Clean up exiftool singleton
+      const { exiftool } = await import('exiftool-vendored');
+      try {
+        await exiftool.end();
+      } catch (e) {
+        // Ignore errors if already closed
+      }
+
       await service.cleanup();
       closeDatabase();
     }
