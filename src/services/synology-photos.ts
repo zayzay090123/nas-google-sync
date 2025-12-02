@@ -487,7 +487,7 @@ export class SynologyPhotosService {
 
     try {
       while (true) {
-        const response = await this.client.get<SynologyApiResponse<{ list: SynologyAlbum[] }>>(
+        const response = await this.client.get<SynologyApiResponse<{ items: SynologyAlbum[] }>>(
           '/webapi/entry.cgi',
           {
             params: {
@@ -505,7 +505,7 @@ export class SynologyPhotosService {
           throw new Error(`Failed to list albums: ${JSON.stringify(response.data.error)}`);
         }
 
-        const albums = response.data.data?.list || [];
+        const albums = response.data.data?.items || [];
         if (albums.length === 0) {
           break; // No more albums
         }
@@ -754,15 +754,9 @@ export class SynologyPhotosService {
       logger.debug(`Photo not found: ${filename}`);
       return null;
     } catch (error) {
-      // Network errors and unexpected failures should be thrown to indicate transient issues
-      // Only log as debug if it's our own graceful "API not available" error
-      if (error instanceof Error && error.message.includes('not available')) {
-        logger.debug(error.message);
-        return null;
-      }
-
-      // Rethrow unexpected errors (network, auth, etc.) so caller can handle or retry
+      // Network errors and unexpected failures - log and rethrow so caller can handle or retry
       logger.warn(`Error searching for photo "${filename}": ${error}`);
+      // TODO: For duplicate filenames, disambiguate by path/size/timestamp
       throw error;
     }
   }
@@ -852,6 +846,11 @@ export class SynologyPhotosService {
         }
 
         logger.debug(`Added chunk ${i + 1}/${chunks.length} (${chunk.length} photos) to album ${albumId}`);
+
+        // Add delay between chunks to avoid rate limiting (except after the last chunk)
+        if (i < chunks.length - 1) {
+          await this.delay(100);
+        }
       }
 
       logger.info(`Added ${photoIds.length} photos to album ${albumId}`);
@@ -866,10 +865,14 @@ export class SynologyPhotosService {
    * Batch lookup photo IDs by filename with deduplication and optional concurrency.
    * More efficient for processing many photos.
    *
-   * @param filenames - Array of filenames to look up
+   * @param filenames - Array of filenames to look up (duplicates are automatically deduplicated)
    * @param onProgress - Optional progress callback (found count, total count)
    * @param concurrency - Number of concurrent lookups (default: 1, max recommended: 5)
-   * @returns Map of filename to Synology photo ID
+   * @returns Map of filename to Synology photo ID (one ID per unique filename, even if input contains duplicates)
+   *
+   * @note Uses 100ms delays between requests/batches to avoid rate limiting
+   * @note Input filenames are deduplicated before processing; results contain exactly one entry per unique filename
+   * @note For large inputs, total time = uniqueFilenames.length * 100ms / concurrency
    */
   async batchFindPhotoIds(
     filenames: string[],
