@@ -416,7 +416,12 @@ program
       let photosWithAlbums = scanResult.photos.filter(p => p.albumName);
 
       if (options.limit) {
-        photosWithAlbums = photosWithAlbums.slice(0, parseInt(options.limit, 10));
+        const limit = parseInt(options.limit, 10);
+        if (!Number.isFinite(limit) || limit <= 0) {
+          console.error(`\nError: Invalid limit "${options.limit}". Must be a positive number.\n`);
+          process.exit(1);
+        }
+        photosWithAlbums = photosWithAlbums.slice(0, limit);
       }
 
       if (photosWithAlbums.length === 0) {
@@ -442,7 +447,7 @@ program
 
           if (result.success) {
             tagged++;
-          } else if (result.error?.includes('Unsupported format')) {
+          } else if (result.errorType === 'unsupported_format') {
             skipped++;
           } else {
             failed++;
@@ -478,6 +483,11 @@ program
     try {
       const albums = getAlbumStats(options.account);
       const limit = parseInt(options.limit, 10);
+
+      if (!Number.isFinite(limit) || limit <= 0) {
+        console.error(`\nError: Invalid limit "${options.limit}". Must be a positive number.\n`);
+        process.exit(1);
+      }
 
       if (albums.size === 0) {
         console.log('\nNo albums found.');

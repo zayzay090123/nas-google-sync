@@ -277,9 +277,9 @@ export class SyncService {
     // Track created folders to avoid redundant API calls
     const createdFolders = new Set<string>();
 
-    // Initialize tag writer if needed
+    // Initialize tag writer if needed (only in non-dry-run mode)
     let tagWriter: TagWriterService | null = null;
-    if (tagWithAlbum) {
+    if (tagWithAlbum && !dryRun) {
       tagWriter = new TagWriterService(dryRun);
     }
 
@@ -665,13 +665,20 @@ export class SyncService {
    * Handles invalid characters, path traversal attempts, and edge cases.
    */
   private sanitizeAlbumName(name: string): string {
-    return name
-      .trim()                              // Remove leading/trailing whitespace
+    const trimmed = name.trim();
+    const sanitized = trimmed
       .replace(/[<>:"/\\|?*]/g, '_')       // Replace invalid filesystem chars
       .replace(/\.{2,}/g, '_')             // Prevent path traversal (.., ...)
       .replace(/^[./\\]+/, '')             // Remove leading dots/slashes
       .trim()                              // Trim again after replacements
       || 'Untitled Album';                 // Fallback for empty result
+
+    // Log when sanitization changes the name (helps diagnose collisions)
+    if (sanitized !== trimmed) {
+      logger.debug(`Album name sanitized: "${trimmed}" -> "${sanitized}"`);
+    }
+
+    return sanitized;
   }
 
   private delay(ms: number): Promise<void> {

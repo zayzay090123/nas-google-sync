@@ -3,11 +3,14 @@ import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger.js';
 
+export type TagWriteErrorType = 'not_found' | 'unsupported_format' | 'read_failed' | 'write_failed' | 'invalid_input';
+
 export interface TagWriteResult {
   success: boolean;
   filePath: string;
   albumName: string;
   error?: string;
+  errorType?: TagWriteErrorType;
 }
 
 export interface TagWriteStats {
@@ -41,6 +44,7 @@ export class TagWriterService {
 
     if (!albumName || albumName.trim() === '') {
       result.error = 'No album name provided';
+      result.errorType = 'invalid_input';
       return result;
     }
 
@@ -49,6 +53,7 @@ export class TagWriterService {
 
     if (!supportedFormats.includes(ext)) {
       result.error = `Unsupported format for tagging: ${ext}`;
+      result.errorType = 'unsupported_format';
       return result;
     }
 
@@ -65,6 +70,7 @@ export class TagWriterService {
         existingTags = await this.readTags(filePath);
       } catch (readError) {
         result.error = `Cannot read existing tags: ${readError}`;
+        result.errorType = 'read_failed';
         logger.error(`Failed to read tags from ${filePath}: ${readError}`);
         return result;
       }
@@ -98,8 +104,10 @@ export class TagWriterService {
       // Better TOCTOU error handling
       if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
         result.error = 'File not found or was deleted';
+        result.errorType = 'not_found';
       } else {
         result.error = `Failed to write tag: ${error}`;
+        result.errorType = 'write_failed';
       }
       logger.warn(`Failed to write tag to ${filePath}: ${error}`);
     }
@@ -137,7 +145,7 @@ export class TagWriterService {
 
       if (result.success) {
         stats.success++;
-      } else if (result.error?.includes('Unsupported format')) {
+      } else if (result.errorType === 'unsupported_format') {
         stats.skipped++;
       } else {
         stats.failed++;
@@ -148,7 +156,12 @@ export class TagWriterService {
   }
 
   /**
-   * Read existing tags from a photo
+   * Read existing tags from a photo.
+   *
+   * @param filePath - Absolute path to the photo file
+   * @returns Array of existing tag keywords (deduplicated)
+   * @throws {Error} If the file cannot be read or exiftool fails.
+   *                 Callers must decide whether to abort or proceed with empty tags.
    */
   async readTags(filePath: string): Promise<string[]> {
     try {
