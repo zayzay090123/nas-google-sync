@@ -238,10 +238,17 @@ node dist/index.js sync --account mygoogle --no-tag-with-album
 
 **By default, every sync automatically fixes previously-synced photos.** The tool will:
 
-1. **Step 1:** Find photos that were already synced and apply album tags to their source files
-2. **Step 2:** Upload any new photos to Synology
+1. **Step 1 (Reprocess):**
+   - Finds photos already on Synology that need album tags
+   - Tags the source files in your Takeout folder
+   - Marks them for re-upload
 
-This two-step process is completely automatic - you don't need any special flags. Just run:
+2. **Step 2 (Sync):**
+   - Re-uploads tagged photos (overwrites existing files on Synology)
+   - Uploads any new photos
+   - Synology Photos automatically reads album tags from EXIF metadata
+
+This two-step process is completely automatic - you don't need any special flags:
 
 ```bash
 # Normal sync - automatically fixes old photos AND syncs new ones
@@ -251,12 +258,18 @@ node dist/index.js sync --account mygoogle
 node dist/index.js sync --account mygoogle --no-reprocess
 ```
 
+**How it works:**
+1. Photos already on Synology get their source files tagged with album names (XMP:Subject, IPTC:Keywords)
+2. These photos are re-uploaded to Synology, overwriting the existing files
+3. Synology Photos automatically reads the EXIF tags and shows them as "General tags"
+4. You can then create albums in Synology Photos using these tags
+
 **What gets reprocessed:**
 - Photos that were backed up before album preservation was enabled
 - Photos in your Takeout folder that haven't been tagged yet
 - Only photos with album names detected from folder structure
 
-> **Important:** Reprocessing requires your Google Takeout source files to still exist. Tags are written to the source files in the Takeout folder, not to files already on Synology. If you've deleted your Takeout files, only new photos will be tagged.
+> **Important:** Reprocessing requires your Google Takeout source files to still exist. If you've deleted your Takeout files, only new photos will be tagged.
 
 ### Retag Command (Tag Without Syncing)
 

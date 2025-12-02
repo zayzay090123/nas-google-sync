@@ -254,7 +254,7 @@ program
             }
           );
 
-          console.log(`\n${accountName} [Reprocess]: Tagged ${reprocessResult.tagged}, Skipped ${reprocessResult.skipped}, Failed ${reprocessResult.failed}\n`);
+          console.log(`\n${accountName} [Reprocess]: Tagged ${reprocessResult.tagged}, Queued for re-upload ${reprocessResult.queuedForResync}, Skipped ${reprocessResult.skipped}, Failed ${reprocessResult.failed}\n`);
         }
 
         // Normal sync step: Upload new photos to Synology

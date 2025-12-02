@@ -570,14 +570,15 @@ export class SyncService {
 
   /**
    * Reprocess already-synced photos to apply album tags.
-   * This is for backwards compatibility - users who already synced photos
-   * without album preservation can run this to apply tags to source files.
+   *
+   * This tags source files with album names and marks them for re-upload.
+   * When re-uploaded, Synology Photos will automatically read the EXIF tags.
    */
   async reprocessForAlbums(
     accountName: string,
     options: SyncOptions = {},
     onProgress?: (current: number, total: number, filename: string) => void
-  ): Promise<{ tagged: number; skipped: number; failed: number }> {
+  ): Promise<{ tagged: number; skipped: number; failed: number; queuedForResync: number }> {
     const { limit, dryRun = config.dryRun, tagWithAlbum = false } = options;
 
     if (!tagWithAlbum) {
@@ -620,12 +621,18 @@ export class SyncService {
     let tagged = 0;
     let skipped = 0;
     let failed = 0;
+    let queuedForResync = 0;
 
     const tagWriter = new TagWriterService(dryRun);
 
+    // Prepare statement for clearing is_backed_up flag
+    const clearBackupStmt = db.prepare(`
+      UPDATE photos SET is_backed_up = 0, backed_up_at = NULL WHERE id = ?
+    `);
+
     try {
       for (let i = 0; i < rows.length; i++) {
-        const { filename, synology_path: filePath, album_name: albumName } = rows[i];
+        const { id, filename, synology_path: filePath, album_name: albumName } = rows[i];
 
         if (onProgress) {
           onProgress(i + 1, rows.length, filename);
@@ -642,7 +649,15 @@ export class SyncService {
           const result = await tagWriter.writeAlbumTag(filePath, albumName);
           if (result.success) {
             tagged++;
-          } else if (result.error?.includes('Unsupported format')) {
+
+            // Clear is_backed_up flag so this photo will be re-uploaded
+            // The re-upload will overwrite the file on Synology with the tagged version
+            if (!dryRun) {
+              clearBackupStmt.run(id);
+              queuedForResync++;
+              logger.debug(`Queued ${filename} for re-upload with album tags`);
+            }
+          } else if (result.errorType === 'unsupported_format') {
             skipped++;
           } else {
             failed++;
@@ -656,8 +671,10 @@ export class SyncService {
       await tagWriter.close();
     }
 
-    logger.info(`Reprocess complete: ${tagged} tagged, ${skipped} skipped, ${failed} failed`);
-    return { tagged, skipped, failed };
+    logger.info(
+      `Reprocess complete: ${tagged} tagged, ${queuedForResync} queued for re-upload, ${skipped} skipped, ${failed} failed`
+    );
+    return { tagged, skipped, failed, queuedForResync };
   }
 
   /**
