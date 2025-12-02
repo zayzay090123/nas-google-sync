@@ -524,12 +524,11 @@ export class SynologyPhotosService {
 
     // Create new album
     try {
-      const response = await this.client.post<SynologyApiResponse<{ album: SynologyAlbum }>>(
+      const response = await this.client.get<SynologyApiResponse<{ album: SynologyAlbum }>>(
         '/webapi/entry.cgi',
-        null,
         {
           params: {
-            api: 'SYNO.Foto.Browse.Album',
+            api: 'SYNO.Foto.Browse.NormalAlbum',
             method: 'create',
             version: 1,
             _sid: this.sid,
@@ -691,12 +690,11 @@ export class SynologyPhotosService {
     }
 
     try {
-      const response = await this.client.post<SynologyApiResponse>(
+      const response = await this.client.get<SynologyApiResponse>(
         '/webapi/entry.cgi',
-        null,
         {
           params: {
-            api: 'SYNO.Foto.Browse.Album',
+            api: 'SYNO.Foto.Browse.NormalAlbum',
             method: 'add_item',
             version: 1,
             _sid: this.sid,
