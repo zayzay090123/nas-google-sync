@@ -50,6 +50,7 @@ export interface TakeoutPhoto {
   hash: string;
   metadata?: TakeoutMetadata;
   accountName: string;
+  albumName?: string;  // Album name extracted from folder structure
 }
 
 export interface TakeoutScanResult {
@@ -58,6 +59,7 @@ export interface TakeoutScanResult {
   totalSize: number;
   photos: TakeoutPhoto[];
   errors: string[];
+  albumsFound: Map<string, number>;  // Album name -> photo count
 }
 
 export class GoogleTakeoutService {
@@ -80,14 +82,17 @@ export class GoogleTakeoutService {
       totalSize: 0,
       photos: [],
       errors: [],
+      albumsFound: new Map(),
     };
 
-    await this.scanDirectory(folderPath, result, onProgress);
+    // Store the root path so we can determine album names relative to it
+    await this.scanDirectory(folderPath, folderPath, result, onProgress);
 
     logger.info(
       `Takeout scan complete for ${this.accountName}: ` +
       `${result.totalPhotos} photos, ${result.totalVideos} videos, ` +
-      `${(result.totalSize / 1024 / 1024 / 1024).toFixed(2)} GB total`
+      `${(result.totalSize / 1024 / 1024 / 1024).toFixed(2)} GB total, ` +
+      `${result.albumsFound.size} albums detected`
     );
 
     return result;
@@ -95,6 +100,7 @@ export class GoogleTakeoutService {
 
   private async scanDirectory(
     dirPath: string,
+    rootPath: string,
     result: TakeoutScanResult,
     onProgress?: (count: number) => void
   ): Promise<void> {
@@ -105,7 +111,7 @@ export class GoogleTakeoutService {
 
       if (entry.isDirectory()) {
         // Recursively scan subdirectories
-        await this.scanDirectory(fullPath, result, onProgress);
+        await this.scanDirectory(fullPath, rootPath, result, onProgress);
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
 
@@ -115,7 +121,10 @@ export class GoogleTakeoutService {
         }
 
         try {
-          const photo = await this.processMediaFile(fullPath);
+          // Extract album name from folder path
+          const albumName = this.extractAlbumName(dirPath, rootPath);
+
+          const photo = await this.processMediaFile(fullPath, albumName);
           if (photo) {
             result.photos.push(photo);
             result.totalSize += photo.fileSize;
@@ -124,6 +133,11 @@ export class GoogleTakeoutService {
               result.totalPhotos++;
             } else if (VIDEO_EXTENSIONS.includes(ext)) {
               result.totalVideos++;
+            }
+
+            // Track album statistics
+            if (albumName) {
+              result.albumsFound.set(albumName, (result.albumsFound.get(albumName) || 0) + 1);
             }
 
             if (onProgress) {
@@ -138,7 +152,53 @@ export class GoogleTakeoutService {
     }
   }
 
-  private async processMediaFile(filePath: string): Promise<TakeoutPhoto | null> {
+  /**
+   * Extract album name from the folder path relative to root.
+   * Google Takeout typically structures photos as:
+   * - Google Photos/Album Name/photo.jpg
+   * - Google Photos/Photos from YYYY/photo.jpg (date-based, not a real album)
+   * - Google Photos/photo.jpg (root level, no album)
+   */
+  private extractAlbumName(dirPath: string, rootPath: string): string | undefined {
+    // Get the relative path from root
+    const relativePath = path.relative(rootPath, dirPath);
+
+    if (!relativePath || relativePath === '.') {
+      // Photo is in root folder, no album
+      return undefined;
+    }
+
+    // Split the path into parts
+    const pathParts = relativePath.split(path.sep);
+
+    // The first folder after root is the album name
+    const potentialAlbum = pathParts[0];
+
+    // Skip folders that aren't real albums:
+    // - "Photos from YYYY" - auto-generated date folders
+    // - "Untitled" - empty album name
+    // - Date-pattern folders like "2024-01-15"
+    const skipPatterns = [
+      /^Photos from \d{4}$/i,
+      /^Untitled$/i,
+      /^\d{4}$/,           // Just a year
+      /^\d{4}-\d{2}$/,     // YYYY-MM
+      /^\d{4}-\d{2}-\d{2}$/, // YYYY-MM-DD
+      /^Archive$/i,        // Generic Archive folder
+      /^Trash$/i,          // Trash folder
+      /^Edited$/i,         // Edited photos folder
+    ];
+
+    for (const pattern of skipPatterns) {
+      if (pattern.test(potentialAlbum)) {
+        return undefined;
+      }
+    }
+
+    return potentialAlbum;
+  }
+
+  private async processMediaFile(filePath: string, albumName?: string): Promise<TakeoutPhoto | null> {
     const stats = fs.statSync(filePath);
     const filename = path.basename(filePath);
     const ext = path.extname(filename).toLowerCase();
@@ -171,6 +231,7 @@ export class GoogleTakeoutService {
       hash,
       metadata,
       accountName: this.accountName,
+      albumName,
     };
   }
 
@@ -261,6 +322,7 @@ export class GoogleTakeoutService {
         isBackedUp: false,
         canBeRemoved: false,
         lastScannedAt: new Date().toISOString(),
+        albumName: photo.albumName,
       };
 
       insertPhoto(record);
@@ -296,6 +358,7 @@ export class GoogleTakeoutService {
         isBackedUp: true,  // Already on Synology
         canBeRemoved: true, // Safe to delete from Google
         lastScannedAt: new Date().toISOString(),
+        albumName: photo.albumName,
       };
 
       insertPhoto(record);

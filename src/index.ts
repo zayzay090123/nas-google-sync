@@ -3,9 +3,9 @@
 import { Command } from 'commander';
 import { loadConfig } from './config.js';
 import { logger } from './utils/logger.js';
-import { SyncService, AnalysisReport } from './services/sync-service.js';
+import { SyncService, AnalysisReport, SyncOptions, FixAlbumsOptions } from './services/sync-service.js';
 import { extractTakeoutZip } from './services/google-takeout.js';
-import { getPhotoStats, closeDatabase, getDatabase } from './models/database.js';
+import { getPhotoStats, closeDatabase, getDatabase, getAlbumStats } from './models/database.js';
 
 const program = new Command();
 
@@ -97,18 +97,36 @@ program
       console.log(`  Already on Synology: ${result.duplicatesInSynology}`);
       console.log(`  Duplicates in takeout: ${result.duplicatesInTakeout}`);
 
+      // Show album statistics
+      if (result.albumsFound.size > 0) {
+        console.log(`\n  Albums detected: ${result.albumsFound.size}`);
+        const sortedAlbums = [...result.albumsFound.entries()].sort((a, b) => b[1] - a[1]);
+        const albumsToShow = sortedAlbums.slice(0, 10);
+        for (const [album, count] of albumsToShow) {
+          console.log(`    - ${album}: ${count} photos`);
+        }
+        if (sortedAlbums.length > 10) {
+          console.log(`    ... and ${sortedAlbums.length - 10} more albums`);
+        }
+      }
+
       if (result.errors.length > 0) {
-        console.log(`  Errors: ${result.errors.length}`);
+        console.log(`\n  Errors: ${result.errors.length}`);
         if (result.errors.length <= 5) {
           for (const err of result.errors) {
             console.log(`    - ${err}`);
           }
         }
       }
-      console.log('====================================\n');
+      console.log('\n====================================\n');
 
       if (result.newPhotos > 0) {
-        console.log(`Run 'npm run sync -- --account ${options.account}' to upload to Synology.`);
+        console.log(`Run 'npm run start -- sync --account ${options.account}' to upload to Synology.\n`);
+        if (result.albumsFound.size > 0) {
+          console.log('Album preservation options:');
+          console.log('  --organize-by-album  Create album folders on Synology');
+          console.log('  --tag-with-album     Write album name to photo EXIF tags\n');
+        }
       }
     } catch (error) {
       logger.error(`Import failed: ${error}`);
@@ -195,6 +213,9 @@ program
   .option('-a, --account <name>', 'Google account name to sync from')
   .option('-n, --limit <number>', 'Limit number of photos to sync (default: all)')
   .option('--dry-run', 'Show what would be synced without actually syncing')
+  .option('--organize-by-album', 'Create album folders on Synology and organize photos into them')
+  .option('--tag-with-album', 'Write album name to photo EXIF tags (default: true, use --no-tag-with-album to disable)')
+  .option('--no-tag-with-album', 'Skip writing album tags to photo EXIF metadata')
   .action(async (options) => {
     const service = new SyncService();
     const config = loadConfig();
@@ -207,23 +228,48 @@ program
         : config.googleAccounts.map(a => a.name);
 
       for (const accountName of accounts) {
-        console.log(`\nSyncing ${accountName} to Synology...`);
+        const tagWithAlbum = options.tagWithAlbum !== false; // Default true unless --no-tag-with-album
+
+        const modeInfo = [];
+        if (options.organizeByAlbum) modeInfo.push('organizing by album');
+        if (tagWithAlbum) modeInfo.push('tagging with album');
+        const modeStr = modeInfo.length > 0 ? ` (${modeInfo.join(', ')})` : '';
+
+        console.log(`\nSyncing ${accountName} to Synology${modeStr}...`);
+
+        const syncOptions: SyncOptions = {
+          limit: options.limit ? parseInt(options.limit, 10) : undefined,
+          dryRun: options.dryRun,
+          organizeByAlbum: options.organizeByAlbum,
+          tagWithAlbum: tagWithAlbum,
+        };
 
         const result = await service.syncToSynology(
           accountName,
-          options.limit ? parseInt(options.limit, 10) : undefined,
-          options.dryRun,
+          syncOptions,
           (current, total, filename) => {
             process.stdout.write(`\r[${current}/${total}] ${filename}...`);
           }
         );
 
-        console.log(`\n${accountName}: Synced ${result.synced}, Failed ${result.failed}, Skipped ${result.skipped}`);
+        let summary = `\n${accountName} [Sync]: Synced ${result.synced}, Failed ${result.failed}, Skipped ${result.skipped}`;
+        if (result.tagged > 0) {
+          summary += `, Tagged ${result.tagged}`;
+        }
+        console.log(summary);
       }
     } catch (error) {
       logger.error(`Sync failed: ${error}`);
       process.exit(1);
     } finally {
+      // Clean up exiftool singleton
+      const { exiftool } = await import('exiftool-vendored');
+      try {
+        await exiftool.end();
+      } catch (e) {
+        // Ignore errors if already closed
+      }
+
       await service.cleanup();
       closeDatabase();
     }
@@ -304,6 +350,230 @@ program
       }
     } catch (error) {
       logger.error(`Duplicate check failed: ${error}`);
+      process.exit(1);
+    } finally {
+      await service.cleanup();
+      closeDatabase();
+    }
+  });
+
+program
+  .command('retag')
+  .description('Apply album tags to photos in a Google Takeout folder (no upload)')
+  .argument('<path>', 'Path to the extracted Google Takeout folder')
+  .option('-n, --limit <number>', 'Limit number of photos to tag')
+  .option('--dry-run', 'Show what would be tagged without actually tagging')
+  .action(async (takeoutPath: string, options) => {
+    const fs = await import('fs');
+    const pathModule = await import('path');
+    const { GoogleTakeoutService } = await import('./services/google-takeout.js');
+    const { TagWriterService } = await import('./services/tag-writer.js');
+
+    try {
+      // Try to find the Google Photos subfolder
+      let photosPath = takeoutPath;
+      const googlePhotosSubfolder = pathModule.join(takeoutPath, 'Google Photos');
+      const takeoutSubfolder = pathModule.join(takeoutPath, 'Takeout', 'Google Photos');
+
+      if (fs.existsSync(googlePhotosSubfolder)) {
+        photosPath = googlePhotosSubfolder;
+      } else if (fs.existsSync(takeoutSubfolder)) {
+        photosPath = takeoutSubfolder;
+      }
+
+      console.log(`\nScanning for photos with albums in: ${photosPath}`);
+
+      // Scan the takeout folder to find photos with albums
+      const takeoutService = new GoogleTakeoutService('retag');
+      const scanResult = await takeoutService.scanTakeoutFolder(photosPath, (count) => {
+        process.stdout.write(`\rScanned ${count} photos...`);
+      });
+
+      // Filter to photos with albums
+      let photosWithAlbums = scanResult.photos.filter(p => p.albumName);
+
+      if (options.limit) {
+        const limit = parseInt(options.limit, 10);
+        if (!Number.isFinite(limit) || limit <= 0) {
+          console.error(`\nError: Invalid limit "${options.limit}". Must be a positive number.\n`);
+          process.exit(1);
+        }
+        photosWithAlbums = photosWithAlbums.slice(0, limit);
+      }
+
+      if (photosWithAlbums.length === 0) {
+        console.log('\n\nNo photos with album assignments found.');
+        console.log('Albums are detected from the folder structure (e.g., "Trip to Florida/photo.jpg").\n');
+        return;
+      }
+
+      console.log(`\n\nFound ${photosWithAlbums.length} photos in ${scanResult.albumsFound.size} albums.`);
+      console.log(`${options.dryRun ? '[DRY RUN] ' : ''}Applying album tags...\n`);
+
+      const tagWriter = new TagWriterService(options.dryRun || false);
+      let tagged = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      try {
+        for (let i = 0; i < photosWithAlbums.length; i++) {
+          const photo = photosWithAlbums[i];
+          process.stdout.write(`\r[${i + 1}/${photosWithAlbums.length}] ${photo.filename}...`);
+
+          const result = await tagWriter.writeAlbumTag(photo.filePath, photo.albumName!);
+
+          if (result.success) {
+            tagged++;
+          } else if (result.errorType === 'unsupported_format') {
+            skipped++;
+          } else {
+            failed++;
+          }
+        }
+      } finally {
+        await tagWriter.close();
+      }
+
+      console.log('\n');
+      console.log('========== RETAG RESULTS ==========');
+      console.log(`  Tagged: ${tagged}`);
+      console.log(`  Skipped (unsupported format): ${skipped}`);
+      console.log(`  Failed: ${failed}`);
+      console.log('===================================\n');
+
+      if (!options.dryRun && tagged > 0) {
+        console.log('Album tags have been written to your photos.');
+        console.log('You can now upload these photos to Synology or any other photo service.\n');
+      }
+    } catch (error) {
+      logger.error(`Retag failed: ${error}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('albums')
+  .description('List albums detected from Google Takeout imports')
+  .option('-a, --account <name>', 'Filter by Google account name')
+  .option('-n, --limit <number>', 'Limit number of albums to show', '50')
+  .action(async (options) => {
+    try {
+      const albums = getAlbumStats(options.account);
+      const limit = parseInt(options.limit, 10);
+
+      if (!Number.isFinite(limit) || limit <= 0) {
+        console.error(`\nError: Invalid limit "${options.limit}". Must be a positive number.\n`);
+        process.exit(1);
+      }
+
+      if (albums.size === 0) {
+        console.log('\nNo albums found.');
+        console.log('Run "import" first to detect albums from Google Takeout.\n');
+        return;
+      }
+
+      console.log('\n========== DETECTED ALBUMS ==========\n');
+
+      // Sort by photo count descending
+      const sortedAlbums = [...albums.entries()].sort((a, b) => b[1] - a[1]);
+      const totalPhotosInAlbums = sortedAlbums.reduce((sum, [, count]) => sum + count, 0);
+
+      console.log(`  Total albums: ${albums.size}`);
+      console.log(`  Photos in albums: ${totalPhotosInAlbums}\n`);
+
+      const albumsToShow = sortedAlbums.slice(0, limit);
+      for (const [album, count] of albumsToShow) {
+        console.log(`  ${album}: ${count} photos`);
+      }
+
+      if (sortedAlbums.length > limit) {
+        console.log(`\n  ... and ${sortedAlbums.length - limit} more albums`);
+      }
+
+      console.log('\n=====================================');
+      console.log('\nTo preserve album structure during sync, use:');
+      console.log('  --organize-by-album  Create folders on Synology');
+      console.log('  --tag-with-album     Embed album in photo tags\n');
+      console.log('To retroactively add photos to Synology albums:');
+      console.log('  npm run start -- fix-albums --account <name>\n');
+    } catch (error) {
+      logger.error(`Album listing failed: ${error}`);
+      process.exit(1);
+    } finally {
+      closeDatabase();
+    }
+  });
+
+program
+  .command('fix-albums')
+  .description('Retroactively add already-uploaded photos to Synology Photos albums')
+  .option('-a, --account <name>', 'Google account name to process')
+  .option('-n, --limit <number>', 'Limit number of photos to process (for testing)')
+  .option('--batch-size <number>', 'Number of photos to add per batch', '100')
+  .option('--dry-run', 'Preview without making changes')
+  .action(async (options) => {
+    const service = new SyncService();
+    const config = loadConfig();
+
+    try {
+      await service.authenticateAll();
+
+      const accounts = options.account
+        ? [options.account]
+        : config.googleAccounts.map(a => a.name);
+
+      for (const accountName of accounts) {
+        // First, show current status
+        console.log(`\n========== Album Sync Status for ${accountName} ==========\n`);
+
+        const status = service.getAlbumStatus(accountName);
+        console.log(`  Photos with album assignments: ${status.totalWithAlbums}`);
+        console.log(`  Already in Synology albums: ${status.syncedToAlbums}`);
+        console.log(`  Needing album assignment: ${status.needingSync}`);
+        console.log(`  Needing Synology photo ID: ${status.needingPhotoId}`);
+
+        if (status.needingSync === 0 && status.needingPhotoId === 0) {
+          console.log('\n  All photos are already in their albums!\n');
+          continue;
+        }
+
+        console.log('\n');
+
+        // Validate batchSize
+        const parsedBatchSize = parseInt(options.batchSize, 10);
+        if (!Number.isFinite(parsedBatchSize) || parsedBatchSize <= 0) {
+          console.error(`\nError: Invalid batch-size "${options.batchSize}". Must be a positive number.\n`);
+          process.exit(1);
+        }
+
+        const fixOptions: FixAlbumsOptions = {
+          limit: options.limit ? parseInt(options.limit, 10) : undefined,
+          batchSize: parsedBatchSize,
+          dryRun: options.dryRun || false,
+        };
+
+        console.log(`${options.dryRun ? '[DRY RUN] ' : ''}Fixing albums for ${accountName}...`);
+
+        const result = await service.fixAlbumsRetroactively(
+          accountName,
+          fixOptions,
+          (current, total, filename, status) => {
+            process.stdout.write(`\r[${current}/${total}] ${filename} - ${status}                    `);
+          }
+        );
+
+        console.log('\n');
+        console.log('========== FIX ALBUMS RESULTS ==========');
+        console.log(`  Photos processed: ${result.processed}`);
+        console.log(`  Photo IDs found: ${result.photoIdsFound}`);
+        console.log(`  Albums created: ${result.albumsCreated}`);
+        console.log(`  Added to albums: ${result.addedToAlbums}`);
+        console.log(`  Skipped: ${result.skipped}`);
+        console.log(`  Errors: ${result.errors}`);
+        console.log('========================================\n');
+      }
+    } catch (error) {
+      logger.error(`Fix albums failed: ${error}`);
       process.exit(1);
     } finally {
       await service.cleanup();
@@ -556,13 +826,29 @@ STEP 3: IMPORT GOOGLE TAKEOUT
 This scans the takeout, calculates hashes, and identifies:
   - New photos (not on Synology)
   - Duplicates (already on Synology)
+  - Albums from folder structure (e.g., "Trip to Florida")
+
+After import, run "albums" to see all detected albums.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-STEP 4: SYNC TO SYNOLOGY
-────────────────────────
+STEP 4: SYNC TO SYNOLOGY (with optional album preservation)
+───────────────────────────────────────────────────────────
   npm run start -- sync --account pete_account --dry-run  # Preview first
   npm run start -- sync --account pete_account            # Actually sync
+
+ALBUM PRESERVATION OPTIONS:
+  --organize-by-album   Create album folders on Synology
+                        Photos go into /Photos/AlbumName/ folders
+
+  --tag-with-album      Write album name to photo EXIF tags
+                        Album is written to XMP:Subject and Keywords
+                        Synology can create albums from these tags
+
+Examples:
+  npm run start -- sync --account pete --organize-by-album
+  npm run start -- sync --account pete --tag-with-album
+  npm run start -- sync --account pete --organize-by-album --tag-with-album
 
 This uploads new photos from the takeout to your Synology NAS.
 
@@ -600,6 +886,7 @@ OTHER USEFUL COMMANDS
   npm run start -- status      # Quick storage stats
   npm run start -- analyze     # Full analysis report
   npm run start -- duplicates  # List duplicate photos
+  npm run start -- albums      # List albums found in imports
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
