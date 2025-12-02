@@ -471,33 +471,56 @@ export class SynologyPhotosService {
   // ===== Album Management API Methods =====
 
   /**
-   * List all albums for the authenticated user
+   * List all albums from Synology Photos with automatic pagination.
+   *
+   * @returns Array of all albums (handles pagination automatically)
    */
-  async listAlbums(offset: number = 0, limit: number = 1000): Promise<SynologyAlbum[]> {
+  async listAlbums(): Promise<SynologyAlbum[]> {
     if (!this.sid) {
       throw new Error('Not authenticated. Call authenticate() first.');
     }
 
-    try {
-      const response = await this.client.get<SynologyApiResponse<{ list: SynologyAlbum[] }>>(
-        '/webapi/entry.cgi',
-        {
-          params: {
-            api: 'SYNO.Foto.Browse.Album',
-            method: 'list',
-            version: 1,
-            _sid: this.sid,
-            offset,
-            limit,
-          },
-        }
-      );
+    const allAlbums: SynologyAlbum[] = [];
+    let offset = 0;
+    const limit = 1000;
 
-      if (!response.data.success) {
-        throw new Error(`Failed to list albums: ${JSON.stringify(response.data.error)}`);
+    try {
+      while (true) {
+        const response = await this.client.get<SynologyApiResponse<{ list: SynologyAlbum[] }>>(
+          '/webapi/entry.cgi',
+          {
+            params: {
+              api: 'SYNO.Foto.Browse.Album',
+              method: 'list',
+              version: 1,
+              _sid: this.sid,
+              offset,
+              limit,
+            },
+          }
+        );
+
+        if (!response.data.success) {
+          throw new Error(`Failed to list albums: ${JSON.stringify(response.data.error)}`);
+        }
+
+        const albums = response.data.data?.list || [];
+        if (albums.length === 0) {
+          break; // No more albums
+        }
+
+        allAlbums.push(...albums);
+
+        // If we got fewer albums than the limit, we've reached the end
+        if (albums.length < limit) {
+          break;
+        }
+
+        offset += limit;
       }
 
-      return response.data.data?.list || [];
+      logger.debug(`Listed ${allAlbums.length} albums from Synology Photos`);
+      return allAlbums;
     } catch (error) {
       logger.error(`Failed to list albums: ${error}`);
       throw error;
@@ -506,20 +529,27 @@ export class SynologyPhotosService {
 
   /**
    * Get or create an album by name.
-   * Returns the Synology album ID.
+   * Returns the Synology album ID and whether it was newly created.
+   *
+   * @param albumName - Name of the album
+   * @param existingAlbums - Optional pre-fetched list of albums to avoid redundant API calls
+   * @returns Object containing albumId and wasCreated flag
    */
-  async getOrCreateAlbum(albumName: string): Promise<number> {
+  async getOrCreateAlbum(
+    albumName: string,
+    existingAlbums?: SynologyAlbum[]
+  ): Promise<{ albumId: number; wasCreated: boolean }> {
     if (!this.sid) {
       throw new Error('Not authenticated. Call authenticate() first.');
     }
 
-    // First, try to find existing album
-    const albums = await this.listAlbums();
+    // Use provided albums list or fetch if not provided
+    const albums = existingAlbums ?? await this.listAlbums();
     const existing = albums.find((a) => a.name === albumName);
 
     if (existing) {
       logger.debug(`Found existing album "${albumName}" (ID: ${existing.id})`);
-      return existing.id;
+      return { albumId: existing.id, wasCreated: false };
     }
 
     // Create new album
@@ -547,7 +577,7 @@ export class SynologyPhotosService {
       }
 
       logger.info(`Created album "${albumName}" (ID: ${albumId})`);
-      return albumId;
+      return { albumId, wasCreated: true };
     } catch (error) {
       logger.error(`Failed to create album "${albumName}": ${error}`);
       throw error;
@@ -555,38 +585,62 @@ export class SynologyPhotosService {
   }
 
   /**
-   * List folders in the photo library
+   * List all folders in the photo library with automatic pagination.
+   *
+   * @param parentId - Parent folder ID (0 for root)
+   * @returns Array of all folders (handles pagination automatically)
    */
   async listFolders(parentId: number = 0): Promise<SynologyFolder[]> {
     if (!this.sid) {
       throw new Error('Not authenticated. Call authenticate() first.');
     }
 
-    try {
-      const response = await this.client.get<SynologyApiResponse<{ list: SynologyFolder[] }>>(
-        '/webapi/entry.cgi',
-        {
-          params: {
-            api: 'SYNO.Foto.Browse.Folder',
-            method: 'list',
-            version: 1,
-            _sid: this.sid,
-            id: parentId,
-            offset: 0,
-            limit: 1000,
-          },
-        }
-      );
+    const allFolders: SynologyFolder[] = [];
+    let offset = 0;
+    const limit = 1000;
 
-      if (!response.data.success) {
-        logger.warn(`Failed to list folders: ${JSON.stringify(response.data.error)}`);
-        return [];
+    try {
+      while (true) {
+        const response = await this.client.get<SynologyApiResponse<{ list: SynologyFolder[] }>>(
+          '/webapi/entry.cgi',
+          {
+            params: {
+              api: 'SYNO.Foto.Browse.Folder',
+              method: 'list',
+              version: 1,
+              _sid: this.sid,
+              id: parentId,
+              offset,
+              limit,
+            },
+          }
+        );
+
+        if (!response.data.success) {
+          logger.warn(`Failed to list folders: ${JSON.stringify(response.data.error)}`);
+          return allFolders; // Return what we have so far
+        }
+
+        const folders = response.data.data?.list || [];
+        if (folders.length === 0) {
+          break; // No more folders
+        }
+
+        allFolders.push(...folders);
+
+        // If we got fewer folders than the limit, we've reached the end
+        if (folders.length < limit) {
+          break;
+        }
+
+        offset += limit;
       }
 
-      return response.data.data?.list || [];
+      logger.debug(`Listed ${allFolders.length} folders from Synology Photos`);
+      return allFolders;
     } catch (error) {
       logger.error(`Failed to list folders: ${error}`);
-      return [];
+      return allFolders; // Return what we have so far
     }
   }
 

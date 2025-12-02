@@ -191,7 +191,7 @@ node dist/index.js fix-albums --account mygoogle
 - Shows progress as it works
 
 **Example output:**
-```
+```text
 ========== Album Sync Status ==========
   Photos with album assignments: 1,250
   Already in Synology albums: 0

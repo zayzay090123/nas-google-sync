@@ -714,14 +714,12 @@ export class SyncService {
           synologyAlbumId = albumIdCache.get(albumName)!;
         } else {
           if (!dryRun) {
-            // Check if album exists, create if not
+            // Fetch albums list once and pass to getOrCreateAlbum to avoid redundant API calls
             const existingAlbums = await synologyService.listAlbums();
-            const existing = existingAlbums.find(a => a.name === albumName);
+            const { albumId, wasCreated } = await synologyService.getOrCreateAlbum(albumName, existingAlbums);
+            synologyAlbumId = albumId;
 
-            if (existing) {
-              synologyAlbumId = existing.id;
-            } else {
-              synologyAlbumId = await synologyService.getOrCreateAlbum(albumName);
+            if (wasCreated) {
               result.albumsCreated++;
             }
 
